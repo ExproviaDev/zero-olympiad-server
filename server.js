@@ -1,6 +1,6 @@
 const express = require("express");
 const quizRouter = require("./router/quizRouter");
-const serverless = require('serverless-http');
+// const serverless = require('serverless-http');
 const app = express();
 
 
@@ -19,4 +19,4 @@ app.get("/", async (req, res)=>{
 //   console.log(`server is running on port: ${PORT}`);
 // })
 
-module.exports.app = serverless(app);
+// module.exports.app = serverless(app);
