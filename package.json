@@ -16,11 +16,8 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
-    "next": "^16.0.10",
     "nodemon": "^3.1.11",
     "postgres": "^3.4.7",
-    "react": "^19.2.3",
-    "react-dom": "^19.2.3",
     "serverless-http": "^4.0.0"
   }
 }

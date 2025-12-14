@@ -29,8 +29,10 @@ app.get("/", async (req, res)=>{
     res.send(x);
 })
 
-app.listen(PORT, ()=>{
-    console.log(`server is running on port: ${PORT}`);
-})
+// app.listen(PORT, ()=>{
+//     console.log(`server is running on port: ${PORT}`);
+// })
 
 // module.exports.app = serverless(app);
+
+module.exports = app
