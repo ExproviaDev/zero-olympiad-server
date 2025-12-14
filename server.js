@@ -25,7 +25,7 @@ app.use('/', quizRouter);
 
 
 app.get("/", async (req, res)=>{
-    const x = 'server is running successfully';
+    const x = 'Zero Olympiad server is ok!';
     res.send(x);
 })
 
