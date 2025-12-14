@@ -109,7 +109,7 @@ router.post('/forgot-password', async (req, res) => {
 
     try {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-            redirectTo: 'http://localhost:3000/update-password', 
+            redirectTo: 'https://z-o-frontend.vercel.app/update-password', 
         });
 
         if (error) {

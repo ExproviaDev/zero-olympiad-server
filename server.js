@@ -8,8 +8,13 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+const ALLOWED_ORIGINS = [
+    'http://localhost:3000',     
+    'https://z-o-frontend.vercel.app',
+];
+
 const corsOptions = {
-    origin: 'http://localhost:3000', 
+    origin: ALLOWED_ORIGINS, 
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
     optionsSuccessStatus: 204
@@ -25,7 +30,7 @@ app.use('/', quizRouter);
 
 
 app.get("/", async (req, res)=>{
-    const x = 'server is running successfully';
+    const x = 'Zero Olympiad server is ok!';
     res.send(x);
 })
 
