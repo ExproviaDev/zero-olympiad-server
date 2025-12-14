@@ -8,8 +8,13 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+const ALLOWED_ORIGINS = [
+    'http://localhost:3000',     
+    'https://zero-olympiad.vercel.app',
+];
+
 const corsOptions = {
-    origin: 'http://localhost:3000', 
+    origin: ALLOWED_ORIGINS, 
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
     optionsSuccessStatus: 204
