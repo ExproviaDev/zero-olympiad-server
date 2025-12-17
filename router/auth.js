@@ -1,3 +1,8 @@
+const express = require('express');
+const router = express.Router(); 
+
+router.use(express.json());
+
 router.get('/me', async (req, res) => {
     try {
         const token = req.headers.authorization?.split(' ')[1];
@@ -19,3 +24,5 @@ router.get('/me', async (req, res) => {
         res.status(500).json({ message: "Internal Server Error" });
     }
 });
+
+module.exports = router;
