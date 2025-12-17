@@ -2,42 +2,50 @@ const express = require('express');
 const supabase = require('../config/db');
 const router = express.Router();
 
-
 router.post('/register', async (req, res) => {
     const { 
-        email, 
-        password, 
-        name, 
-        phone, 
-        district, 
-        institution, 
-        educationType, 
-        gradeLevel, 
-        currentLevel 
+        email, password, name, phone, district, institution, 
+        educationType, gradeLevel, currentLevel, activities 
     } = req.body;
 
-    if (!email || !password || !name || !phone || !district || !institution || !educationType || !gradeLevel || !currentLevel) {
-        return res.status(400).json({ message: "ফর্মের সকল তথ্য পূরণ করা আবশ্যক।" });
-    }
-
     try {
+        let sdgRole = "General Member";
+        const activistLevels = [
+            "Class 5, Grade 5, PYP 5, Taysir, Equivalent",
+            "Class 6, Grade 6, MYP 1, Mizan, Equivalent",
+            "Class 7, Grade 7, MYP 2, Nahbameer",
+            "Class 8, Grade 8, MYP 3, Hedayatun Nahu"
+        ];
+        const ambassadorLevels = [
+            "Class 9, Grade 9, MYP 4, Kafiya and Bekaya, Equivalent",
+            "Class 10, Grade 10, MYP 5, Kafiya and Bekaya, Equivalent",
+            "SSC Candidate, O Level Candidate, Kafiya and Bekaya Equivalent",
+            "Class 11 (HSC), Grade 11, DP 1, Jalalayn, Equivalent",
+            "Class 12 (HSC), Grade 12, DP 2, Jalalayn, Equivalent",
+            "HSC Candidate, A Level Candidate, Jalalayn Equivalent"
+        ];
+
+        if (activistLevels.includes(gradeLevel)) {
+            sdgRole = "SDG Activist";
+        } else if (ambassadorLevels.includes(gradeLevel)) {
+            sdgRole = "SDG Ambassador";
+        } else if (currentLevel && currentLevel !== "None of These") {
+            sdgRole = "SDG Achiever";
+        }
+        const activitiesRole = Array.isArray(activities) ? activities.join(', ') : "";
         const { data: authData, error: authError } = await supabase.auth.signUp({
             email,
             password,
         });
 
-        if (authError) {
-            console.error("Supabase Auth Error:", authError.message);
-            return res.status(400).json({ message: authError.message });
-        }
+        if (authError) return res.status(400).json({ message: authError.message });
         
-        const newUserId = authData.user.id; 
-
+        const newUserId = authData.user.id;
         const { data: profileData, error: profileError } = await supabase
             .from('user_profiles')
             .insert([
                 {
-                    user_id: newUserId, // Auth ID দিয়ে প্রোফাইল লিঙ্ক করা হলো
+                    user_id: newUserId,
                     name,
                     email,
                     phone,
@@ -45,26 +53,24 @@ router.post('/register', async (req, res) => {
                     institution,
                     education_type: educationType,
                     grade_level: gradeLevel,
-                    current_level: currentLevel,
+                    current_level: currentLevel || gradeLevel,
+                    sdg_role: sdgRole,
+                    activities_role: activitiesRole,
+                    round_type: "initial round_1", 
+                    assigned_course: "no course enrolled yet", 
+                    role: "user"
                 },
-            ])
-            .select();
+            ]);
 
         if (profileError) {
-            console.error("Supabase Profile Insert Error:", profileError.message);
-            return res.status(500).json({ message: 'রেজিস্ট্রেশন ব্যর্থ: প্রোফাইল ডেটা সংরক্ষণ করা যায়নি।' });
+            console.error("Insert Error:", profileError.message);
+            return res.status(500).json({ message: 'প্রোফাইল সেভ করা সম্ভব হয়নি।' });
         }
 
-        // ৫. সফল Response
-        res.status(201).json({ 
-            message: "রেজিস্ট্রেশন সফল! যাচাইকরণের জন্য আপনার ইমেল চেক করুন। প্রোফাইল ডেটাও সেভ করা হয়েছে।",
-            user: authData.user,
-            profile: profileData ? profileData[0] : null // সেভ হওয়া প্রোফাইল ডেটা
-        });
+        res.status(201).json({ message: "রেজিস্ট্রেশন সফল!", user: authData.user });
 
     } catch (err) {
-        console.error("Server Registration Error:", err);
-        res.status(500).json({ message: 'অভ্যন্তরীণ সার্ভার ত্রুটি ঘটেছে।' });
+        res.status(500).json({ message: 'অভ্যন্তরীণ সার্ভার ত্রুটি।' });
     }
 });
 
