@@ -35,11 +35,4 @@ app.get("/", async (req, res)=>{
     const x = 'Zero Olympiad server is ok!';
     res.send(x);
 })
-
-// app.listen(PORT, ()=>{
-//     console.log(`server is running on port: ${PORT}`);
-// })
-
-// module.exports.app = serverless(app);
-
 module.exports = app
