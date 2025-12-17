@@ -35,4 +35,6 @@ app.get("/", async (req, res)=>{
     const x = 'Zero Olympiad server is ok!';
     res.send(x);
 })
+
+
 module.exports = app
