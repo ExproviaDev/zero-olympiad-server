@@ -21,7 +21,7 @@ router.get('/me', async (req, res) => {
             user: profile
         });
     } catch (err) {
-        res.status(500).json({ message: "Internal Server Error" });
+        res.status(500).json({ message: "authError" });
     }
 });
 
