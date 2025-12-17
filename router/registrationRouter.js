@@ -2,14 +2,98 @@ const express = require('express');
 const supabase = require('../config/db');
 const router = express.Router();
 
+// router.post('/register', async (req, res) => {
+//     const {
+//         email, password, name, phone, district, institution,
+//         educationType, gradeLevel, currentLevel, activities
+//     } = req.body;
+
+//     try {
+//         let sdgRole = "General Member";
+//         const activistLevels = [
+//             "Class 5, Grade 5, PYP 5, Taysir, Equivalent",
+//             "Class 6, Grade 6, MYP 1, Mizan, Equivalent",
+//             "Class 7, Grade 7, MYP 2, Nahbameer",
+//             "Class 8, Grade 8, MYP 3, Hedayatun Nahu"
+//         ];
+//         const ambassadorLevels = [
+//             "Class 9, Grade 9, MYP 4, Kafiya and Bekaya, Equivalent",
+//             "Class 10, Grade 10, MYP 5, Kafiya and Bekaya, Equivalent",
+//             "SSC Candidate, O Level Candidate, Kafiya and Bekaya Equivalent",
+//             "Class 11 (HSC), Grade 11, DP 1, Jalalayn, Equivalent",
+//             "Class 12 (HSC), Grade 12, DP 2, Jalalayn, Equivalent",
+//             "HSC Candidate, A Level Candidate, Jalalayn Equivalent"
+//         ];
+
+//         if (activistLevels.includes(gradeLevel)) {
+//             sdgRole = "SDG Activist";
+//         } else if (ambassadorLevels.includes(gradeLevel)) {
+//             sdgRole = "SDG Ambassador";
+//         } else if (currentLevel && currentLevel !== "None of These") {
+//             sdgRole = "SDG Achiever";
+//         }
+
+//         const roleMapping = {
+//             "Being a campus ambassador, I want to collect registrations, conduct online and offline study session of the course provided by the United Nations etc. | The best campus ambassador will be awarded": "campus ambassador",
+//             "I want to work in event management at the grand finale in Dhaka | The best event manager will be awarded": "event manager",
+//             "I want only to participate in the Zero Olympiad as a competitor, I don't want to do any such work.": "contestor"
+//         };
+//         const assignedRoles = Array.isArray(activities)
+//             ? activities.map(act => roleMapping[act]).filter(Boolean)
+//             : [];
+//         const activitiesRole = assignedRoles.length > 0 ? assignedRoles.join(', ') : "contestor";
+//         const { data: authData, error: authError } = await supabase.auth.signUp({
+//             email,
+//             password,
+//         });
+
+//         if (authError) return res.status(400).json({ message: authError.message });
+
+//         const newUserId = authData.user.id;
+//         const { data: profileData, error: profileError } = await supabase
+//             .from('user_profiles')
+//             .insert([
+//                 {
+//                     user_id: newUserId,
+//                     name,
+//                     email,
+//                     phone,
+//                     district,
+//                     institution,
+//                     education_type: educationType,
+//                     grade_level: gradeLevel,
+//                     current_level: currentLevel || gradeLevel,
+//                     sdg_role: sdgRole,
+//                     activities_role: activitiesRole,
+//                     round_type: "initial round_1",
+//                     assigned_course: "no course enrolled yet",
+//                     role: "user"
+//                 },
+//             ]);
+
+//         if (profileError) {
+//             console.error("Insert Error:", profileError.message);
+//             return res.status(500).json({ message: 'প্রোফাইল সেভ করা সম্ভব হয়নি।' });
+//         }
+
+//         res.status(201).json({ message: "রেজিস্ট্রেশন সফল!", user: authData.user });
+
+//     } catch (err) {
+//         res.status(500).json({ message: 'অভ্যন্তরীণ সার্ভার ত্রুটি।' });
+//     }
+// });
+
 router.post('/register', async (req, res) => {
-    const { 
-        email, password, name, phone, district, institution, 
-        educationType, gradeLevel, currentLevel, activities 
+    const {
+        email, password, name, phone, district, institution,
+        educationType, gradeLevel, currentLevel, activities
     } = req.body;
 
     try {
+        // --- SDG Role Logic ---
         let sdgRole = "General Member";
+        const trimmedGrade = gradeLevel ? gradeLevel.trim() : "";
+
         const activistLevels = [
             "Class 5, Grade 5, PYP 5, Taysir, Equivalent",
             "Class 6, Grade 6, MYP 1, Mizan, Equivalent",
@@ -25,23 +109,38 @@ router.post('/register', async (req, res) => {
             "HSC Candidate, A Level Candidate, Jalalayn Equivalent"
         ];
 
-        if (activistLevels.includes(gradeLevel)) {
+        if (activistLevels.includes(trimmedGrade)) {
             sdgRole = "SDG Activist";
-        } else if (ambassadorLevels.includes(gradeLevel)) {
+        } else if (ambassadorLevels.includes(trimmedGrade)) {
             sdgRole = "SDG Ambassador";
         } else if (currentLevel && currentLevel !== "None of These") {
             sdgRole = "SDG Achiever";
         }
-        const activitiesRole = Array.isArray(activities) ? activities.join(', ') : "";
+
+        // --- Activities Role Mapping ---
+        const roleMapping = {
+            "Being a campus ambassador, I want to collect registrations, conduct online and offline study session of the course provided by the United Nations etc. | The best campus ambassador will be awarded": "campus ambassador",
+            "I want to work in event management at the grand finale in Dhaka | The best event manager will be awarded": "event manager",
+            "I want only to participate in the Zero Olympiad as a competitor, I don't want to do any such work.": "contestor"
+        };
+
+        const assignedRoles = Array.isArray(activities)
+            ? activities.map(act => roleMapping[act]).filter(Boolean)
+            : [];
+        const activitiesRole = assignedRoles.length > 0 ? assignedRoles.join(', ') : "contestor";
+
+        // --- Auth Registration ---
         const { data: authData, error: authError } = await supabase.auth.signUp({
             email,
             password,
         });
 
         if (authError) return res.status(400).json({ message: authError.message });
-        
+
         const newUserId = authData.user.id;
-        const { data: profileData, error: profileError } = await supabase
+
+        // --- Profile Creation ---
+        const { error: profileError } = await supabase
             .from('user_profiles')
             .insert([
                 {
@@ -53,23 +152,24 @@ router.post('/register', async (req, res) => {
                     institution,
                     education_type: educationType,
                     grade_level: gradeLevel,
-                    current_level: currentLevel || gradeLevel,
+                    current_level: (currentLevel && currentLevel !== "None of These") ? currentLevel : gradeLevel,
                     sdg_role: sdgRole,
                     activities_role: activitiesRole,
-                    round_type: "initial round_1", 
-                    assigned_course: "no course enrolled yet", 
+                    round_type: "initial round_1",
+                    assigned_course: "no course enrolled yet",
                     role: "user"
                 },
             ]);
 
         if (profileError) {
-            console.error("Insert Error:", profileError.message);
-            return res.status(500).json({ message: 'প্রোফাইল সেভ করা সম্ভব হয়নি।' });
+            console.error("Profile Insert Error:", profileError.message);
+            return res.status(500).json({ message: 'প্রোফাইল সেভ করা সম্ভব হয়নি।' });
         }
 
         res.status(201).json({ message: "রেজিস্ট্রেশন সফল!", user: authData.user });
 
     } catch (err) {
+        console.error("Global Catch Error:", err);
         res.status(500).json({ message: 'অভ্যন্তরীণ সার্ভার ত্রুটি।' });
     }
 });
@@ -89,14 +189,14 @@ router.post('/login', async (req, res) => {
         });
 
         if (error) {
-        
+
             console.error("Supabase Login Error:", error.message);
             return res.status(401).json({ message: error.message });
         }
-        
-        res.status(200).json({ 
+
+        res.status(200).json({
             message: "Login successful!",
-            session: data.session, 
+            session: data.session,
             user: data.user
         });
 
@@ -115,7 +215,7 @@ router.post('/forgot-password', async (req, res) => {
 
     try {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-            redirectTo: 'https://z-o-frontend.vercel.app/update-password', 
+            redirectTo: 'https://z-o-frontend.vercel.app/update-password',
         });
 
         if (error) {
@@ -123,8 +223,8 @@ router.post('/forgot-password', async (req, res) => {
             return res.status(400).json({ message: "পাসওয়ার্ড রিসেট অনুরোধ ব্যর্থ হয়েছে।" });
         }
 
-        res.status(200).json({ 
-            message: "আপনার ইমেল অ্যাড্রেসে পাসওয়ার্ড রিসেট লিংক পাঠানো হয়েছে। দয়া করে আপনার ইনবক্স চেক করুন।" 
+        res.status(200).json({
+            message: "আপনার ইমেল অ্যাড্রেসে পাসওয়ার্ড রিসেট লিংক পাঠানো হয়েছে। দয়া করে আপনার ইনবক্স চেক করুন।"
         });
 
     } catch (err) {
