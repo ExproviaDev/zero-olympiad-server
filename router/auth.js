@@ -12,7 +12,7 @@ router.get('/me', async (req, res) => {
         if (authError || !user) return res.status(401).json({ isAuthenticated: false, message: "Invalid token" });
         const { data: profile, error: profileError } = await supabase
             .from('user_profiles')
-            .select('name, email, phone, district, institution, sdg_role, activities_role, profile_image_url, role')
+            .select('*')
             .eq('user_id', user.id)
             .single();
 
