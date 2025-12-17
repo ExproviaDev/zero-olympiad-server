@@ -2,6 +2,7 @@ const express = require("express");
 const quizRouter = require("./router/quizRouter");
 const cors = require('cors');
 const registrationRouter = require("./router/registrationRouter");
+const authRouter = require("./router/auth")
 require('dotenv').config();
 
 
@@ -25,6 +26,7 @@ app.use(cors(corsOptions));
 app.use(express.json());
 
 app.use('/api/auth', registrationRouter); 
+app.use('/api/auth', authRouter);
 app.use('/', quizRouter);
 
 
