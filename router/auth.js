@@ -26,10 +26,20 @@ router.get('/me', async (req, res) => {
     }
 });
 
-
 router.put('/update-profile', async (req, res) => {
     try {
-        const { name, phone, district, institution, education_typ, grade_level, profile_image_url } = req.body;
+        const {
+            name,
+            phone,
+            district,
+            institution,
+            education_type,
+            grade_level,
+            current_level,
+            activities_role,
+            profile_image_url
+        } = req.body;
+
         const token = req.headers.authorization?.split(' ')[1];
 
         if (!token) return res.status(401).json({ error: "No token provided" });
@@ -42,20 +52,26 @@ router.put('/update-profile', async (req, res) => {
                 phone,
                 district,
                 institution,
-                education_typ,
+                education_type,
                 grade_level,
+                current_level,
+                activities_role,
                 profile_image_url
             })
             .eq('user_id', user.id)
             .select();
 
-        if (error) return res.status(500).json({ error: error.message });
+        if (error) {
+            console.error("Database Update Error:", error.message);
+            return res.status(500).json({ error: error.message });
+        }
 
         res.json({
             message: "Profile updated successfully",
             user: data[0]
         });
     } catch (err) {
+        console.error("Server Error:", err);
         res.status(500).json({ error: "Something went wrong" });
     }
 });
