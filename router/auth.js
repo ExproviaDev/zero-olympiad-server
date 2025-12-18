@@ -29,15 +29,9 @@ router.get('/me', async (req, res) => {
 router.put('/update-profile', async (req, res) => {
     try {
         const { 
-            name, 
-            phone, 
-            district, 
-            institution, 
-            education_type,
-            grade_level, 
-            current_level, 
-            activities_role, 
-            profile_image_url 
+            name, phone, district, institution, 
+            education_type, 
+            grade_level, current_level, sdg_role, round_type, activities_role, profile_image_url 
         } = req.body;
 
         const token = req.headers.authorization?.split(' ')[1];
@@ -53,9 +47,11 @@ router.put('/update-profile', async (req, res) => {
                 phone,
                 district,
                 institution,
-                education_typ: education_type,
+                education_type,
                 grade_level,
                 current_level,
+                sdg_role,
+                round_type,
                 activities_role,
                 profile_image_url
             })
@@ -72,4 +68,6 @@ router.put('/update-profile', async (req, res) => {
         res.status(500).json({ error: "Something went wrong" });
     }
 });
+
+
 module.exports = router;
