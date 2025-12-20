@@ -183,7 +183,7 @@ router.post('/register', async (req, res) => {
 
         if (profileError) {
             console.error("Profile Insert Error:", profileError.message);
-            let dbMessage = "There was an server error, Please try again after few minutes";
+            let dbMessage = "there was an error to save your profile data";
             if (profileError.message.includes("user_profiles_phone_key") || profileError.message.includes("duplicate key")) {
                 dbMessage = "The Phone Number Or Email Is already Registered";
             }
