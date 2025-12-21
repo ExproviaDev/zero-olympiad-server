@@ -1,8 +1,8 @@
 const express = require("express");
-const quizRouter = require("./router/quizRouter");
 const cors = require('cors');
 const registrationRouter = require("./router/registrationRouter");
 const authRouter = require("./router/auth")
+const quizRouter = require('./router/quizRouter');
 require('dotenv').config();
 
 
@@ -27,7 +27,7 @@ app.use(express.json());
 
 app.use('/api/auth', registrationRouter); 
 app.use('/api/auth', authRouter);
-app.use('/', quizRouter);
+app.use('/api/admin', quizRouter);
 
 
 
@@ -35,6 +35,8 @@ app.get("/", async (req, res)=>{
     const x = 'Zero Olympiad server is ok!';
     res.send(x);
 })
+
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
 
 module.exports = app
