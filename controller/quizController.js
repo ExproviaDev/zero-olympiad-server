@@ -97,7 +97,7 @@ const updateQuiz = async (req, res) => {
 
 
 const getSingleQuiz = async (req, res) => {
-    const { id } = req.params; 
+    const { id } = req.params;
 
     try {
         const { data, error } = await supabase
@@ -117,4 +117,58 @@ const getSingleQuiz = async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 };
-module.exports = { createFullQuiz, getAllQuizzes, deleteQuiz, updateQuiz, getSingleQuiz };
+
+
+const getQuizzesForUsers = async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('quiz_sets')
+            .select(`
+                id, 
+                title, 
+                category, 
+                time_limit, 
+                start_at,
+                questions (
+                    id, 
+                    question_text, 
+                    options 
+                )
+            `);
+
+        if (error) throw error;
+
+        res.status(200).json({ success: true, data });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+const getSingleQuizForUser = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { data, error } = await supabase
+            .from('quiz_sets')
+            .select(`
+                id, 
+                title, 
+                category, 
+                time_limit, 
+                start_at,
+                questions (
+                    id, 
+                    question_text, 
+                    options
+                )
+            `)
+            .eq('id', id)
+            .single();
+
+        if (error) throw error;
+
+        res.status(200).json({ success: true, data });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+module.exports = { createFullQuiz, getAllQuizzes, deleteQuiz, updateQuiz, getSingleQuiz, getQuizzesForUsers, getSingleQuizForUser };
