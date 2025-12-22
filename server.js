@@ -3,6 +3,7 @@ const cors = require('cors');
 const registrationRouter = require("./router/registrationRouter");
 const authRouter = require("./router/auth")
 const quizRouter = require('./router/quizRouter');
+const adminRouter = require('./router/adminRouter')
 require('dotenv').config();
 
 
@@ -28,6 +29,7 @@ app.use(express.json());
 app.use('/api/auth', registrationRouter); 
 app.use('/api/auth', authRouter);
 app.use('/api/admin', quizRouter);
+app.use('/api/admin', adminRouter);
 
 
 
