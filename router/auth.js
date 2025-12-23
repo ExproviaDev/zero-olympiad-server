@@ -1,37 +1,74 @@
+const jwt = require("jsonwebtoken")
 const supabase = require("../config/db")
 const express = require('express');
 const router = express.Router();
 
 router.use(express.json());
 
-router.get('/me', async (req, res) => {
+
+router.post('/login', async (req, res) => {
+    const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ message: "Email and password are required." });
+
     try {
-        const token = req.headers.authorization?.split(' ')[1];
-        if (!token) return res.status(401).json({ isAuthenticated: false, message: "No token provided" });
-        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-        if (authError || !user) return res.status(401).json({ isAuthenticated: false, message: "Invalid token" });
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+        if (authError) return res.status(401).json({ message: authError.message });
         const { data: profile, error: profileError } = await supabase
             .from('user_profiles')
             .select('*')
-            .eq('user_id', user.id)
+            .eq('user_id', authData.user.id)
             .single();
 
-        if (profileError) return res.status(500).json({ message: "Profile not found" });
+        if (profileError || !profile) return res.status(404).json({ message: "Profile not found." });
+
+        // কাস্টম টোকেন তৈরি (যেখানে role থাকবে)
+        const customToken = jwt.sign(
+            { sub: authData.user.id, role: profile.role, email: authData.user.email },
+            process.env.JWT_SECRET,
+            { expiresIn: '1d' }
+        );
+
+        res.status(200).json({
+            message: "Login successful!",
+            token: customToken, // এই টোকেনটি ফ্রন্টএন্ডে সেভ করবেন
+            user: profile
+        });
+
+    } catch (err) {
+        res.status(500).json({ message: 'Internal server error occurred.' });
+    }
+});
+
+router.get('/me', async (req, res) => {
+    try {
+        const token = req.headers.authorization?.split(' ')[1];
+        if (!token) return res.status(401).json({ isAuthenticated: false });
+
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+        // সরাসরি প্রোফাইল থেকে ডাটা নিন
+        const { data: profile, error: profileError } = await supabase
+            .from('user_profiles')
+            .select('*')
+            .eq('user_id', decoded.sub)
+            .single();
+
+        if (profileError) return res.status(404).json({ message: "Profile not found" });
+
         res.status(200).json({
             isAuthenticated: true,
             user: profile
         });
     } catch (err) {
-        res.status(500).json({ message: "authError" });
+        res.status(401).json({ isAuthenticated: false });
     }
 });
-
 router.put('/update-profile', async (req, res) => {
     try {
-        const { 
-            name, phone, district, institution, 
-            education_type, 
-            grade_level, current_level, sdg_role, round_type, activities_role, profile_image_url 
+        const {
+            name, phone, district, institution,
+            education_type,
+            grade_level, current_level, sdg_role, round_type, activities_role, profile_image_url
         } = req.body;
 
         const token = req.headers.authorization?.split(' ')[1];
