@@ -26,7 +26,7 @@ app.use(cors(corsOptions));
 
 app.use(express.json());
 
-app.use('/api/auth', registrationRouter); 
+app.use('/api/user', registrationRouter); 
 app.use('/api/auth', authRouter);
 app.use('/api/admin', quizRouter);
 app.use('/api/admin', adminRouter);
@@ -38,7 +38,7 @@ app.get("/", async (req, res)=>{
     res.send(x);
 })
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
 
 module.exports = app
