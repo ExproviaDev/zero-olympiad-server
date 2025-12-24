@@ -118,10 +118,11 @@ const getSingleQuiz = async (req, res) => {
     }
 };
 
-
 const getQuizzesForUsers = async (req, res) => {
     try {
-        const { data, error } = await supabase
+        const { category } = req.query;
+
+        let query = supabase
             .from('quiz_sets')
             .select(`
                 id, 
@@ -130,11 +131,17 @@ const getQuizzesForUsers = async (req, res) => {
                 time_limit, 
                 start_at,
                 questions (
-                    id, 
+                    id,
+                    quiz_set_id, 
                     question_text, 
                     options 
                 )
             `);
+        if (category) {
+            query = query.eq('category', category);
+        }
+
+        const { data, error } = await query;
 
         if (error) throw error;
 
@@ -157,18 +164,69 @@ const getSingleQuizForUser = async (req, res) => {
                 start_at,
                 questions (
                     id, 
+                    quiz_set_id,
                     question_text, 
                     options
                 )
-            `)
+            `) 
             .eq('id', id)
             .single();
 
         if (error) throw error;
-
         res.status(200).json({ success: true, data });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
 };
-module.exports = { createFullQuiz, getAllQuizzes, deleteQuiz, updateQuiz, getSingleQuiz, getQuizzesForUsers, getSingleQuizForUser };
+
+const submitQuiz = async (req, res) => {
+    const { user_id, quiz_set_id, answers, time_taken } = req.body;
+
+    if (!user_id || !quiz_set_id) {
+        return res.status(400).json({ success: false, error: "Missing user_id or quiz_set_id" });
+    }
+
+    try {
+        const { data: correctQuestions, error: fetchError } = await supabase
+            .from('questions')
+            .select('id, correct_answer')
+            .eq('quiz_set_id', quiz_set_id);
+
+        if (fetchError) throw fetchError;
+        if (!correctQuestions || correctQuestions.length === 0) {
+            return res.status(404).json({ success: false, error: "No questions found for this quiz set." });
+        }
+
+        let calculatedScore = 0;
+        const userAnswers = answers || {};
+
+        correctQuestions.forEach((q) => {
+            if (userAnswers[q.id] && String(userAnswers[q.id]) === String(q.correct_answer)) {
+                calculatedScore += 1;
+            }
+        });
+        const { data, error: insertError } = await supabase
+            .from('quiz_submissions')
+            .insert([{
+                user_id,
+                quiz_set_id,
+                answers: userAnswers,
+                score: calculatedScore,
+                time_taken: time_taken || 0, 
+                completed_at: new Date().toISOString()
+            }])
+            .select();
+
+        if (insertError) throw insertError;
+        res.status(201).json({
+            success: true,
+            message: "Quiz submitted successfully! Your result has been recorded.",
+        });
+
+    } catch (error) {
+        console.error("Submission Error:", error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+module.exports = { createFullQuiz, getAllQuizzes, deleteQuiz, updateQuiz, getSingleQuiz, getQuizzesForUsers, getSingleQuizForUser, submitQuiz };
