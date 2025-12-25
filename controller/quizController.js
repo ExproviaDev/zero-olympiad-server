@@ -1,33 +1,35 @@
 const supabase = require('../config/db');
 
-
-
+// ১. কুইজ তৈরি (ডিফল্ট স্ট্যাটাস 'draft')
 const createFullQuiz = async (req, res) => {
-    const { title, category, start_at, time_limit, questions } = req.body;
+    const { title, category, start_at, ends_at, time_limit, questions } = req.body;
 
     try {
         const { data: quizSet, error: setEror } = await supabase
             .from('quiz_sets')
-            .insert([{ title, category, start_at, time_limit }])
+            .insert([{ title, category, start_at, ends_at, time_limit, status: 'draft' }]) // status: draft যোগ করা হয়েছে
             .select()
             .single();
 
         if (setEror) throw setEror;
+
         const questionsToInsert = questions.map(q => ({
             quiz_set_id: quizSet.id,
             question_text: q.question_text,
             options: { A: q.optionA, B: q.optionB, C: q.optionC, D: q.optionD },
             correct_answer: q.correct_answer
         }));
+
         const { error: qError } = await supabase.from('questions').insert(questionsToInsert);
         if (qError) throw qError;
 
-        res.status(201).json({ success: true, message: "Quiz Set Created Successfully!" });
+        res.status(201).json({ success: true, message: "Quiz Set Created Successfully as Draft!" });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
 };
 
+// ২. এডমিনের জন্য সব কুইজ (Draft + Published সব দেখা যাবে)
 const getAllQuizzes = async (req, res) => {
     try {
         const { data, error } = await supabase
@@ -42,6 +44,7 @@ const getAllQuizzes = async (req, res) => {
     }
 };
 
+// ৩. কুইজ ডিলিট
 const deleteQuiz = async (req, res) => {
     const { id } = req.params;
     try {
@@ -57,24 +60,26 @@ const deleteQuiz = async (req, res) => {
     }
 };
 
-
+// ৪. কুইজ ডাটা আপডেট (Edit screen থেকে)
 const updateQuiz = async (req, res) => {
     const { id } = req.params;
-    const { title, category, start_at, time_limit, questions } = req.body;
+    const { title, category, start_at, ends_at, time_limit, questions } = req.body;
 
     try {
         const { error: updateSetError } = await supabase
             .from('quiz_sets')
-            .update({ title, category, start_at, time_limit })
+            .update({ title, category, start_at, ends_at, time_limit })
             .eq('id', id);
 
         if (updateSetError) throw updateSetError;
+
         const { error: deleteOldQError } = await supabase
             .from('questions')
             .delete()
             .eq('quiz_set_id', id);
 
         if (deleteOldQError) throw deleteOldQError;
+
         const questionsToInsert = questions.map(q => ({
             quiz_set_id: id,
             question_text: q.question_text,
@@ -89,23 +94,18 @@ const updateQuiz = async (req, res) => {
         if (insertNewQError) throw insertNewQError;
 
         res.status(200).json({ success: true, message: "Quiz updated successfully!" });
-
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
 };
 
-
+// ৫. এডমিনের জন্য একটি কুইজ ডিটেইলস দেখা
 const getSingleQuiz = async (req, res) => {
     const { id } = req.params;
-
     try {
         const { data, error } = await supabase
             .from('quiz_sets')
-            .select(`
-                *,
-                questions (*)
-            `)
+            .select(`*, questions (*)`)
             .eq('id', id)
             .single();
 
@@ -118,6 +118,7 @@ const getSingleQuiz = async (req, res) => {
     }
 };
 
+// ৬. ইউজারদের জন্য কুইজ লিস্ট (শুধুমাত্র Published কুইজ)
 const getQuizzesForUsers = async (req, res) => {
     try {
         const { category } = req.query;
@@ -130,55 +131,48 @@ const getQuizzesForUsers = async (req, res) => {
                 category, 
                 time_limit, 
                 start_at,
-                questions (
-                    id,
-                    quiz_set_id, 
-                    question_text, 
-                    options 
-                )
-            `);
+                ends_at,
+                questions (id, quiz_set_id, question_text, options)
+            `)
+            .eq('status', 'published'); // <--- Filter added
+
         if (category) {
             query = query.eq('category', category);
         }
 
-        const { data, error } = await query;
+        const { data, error } = await query.order('created_at', { ascending: false });
 
         if (error) throw error;
-
         res.status(200).json({ success: true, data });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
 };
 
+// ৭. ইউজারদের জন্য একটি কুইজ (Published হতে হবে)
 const getSingleQuizForUser = async (req, res) => {
     try {
         const { id } = req.params;
         const { data, error } = await supabase
             .from('quiz_sets')
             .select(`
-                id, 
-                title, 
-                category, 
-                time_limit, 
-                start_at,
-                questions (
-                    id, 
-                    quiz_set_id,
-                    question_text, 
-                    options
-                )
-            `) 
+                id, title, category, time_limit, start_at,
+                questions (id, quiz_set_id, question_text, options)
+            `)
             .eq('id', id)
+            .eq('status', 'published') // <--- Security filter added
             .single();
 
-        if (error) throw error;
+        if (error || !data) {
+            return res.status(404).json({ success: false, message: "Quiz not found or not published" });
+        }
         res.status(200).json({ success: true, data });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
 };
 
+// ৮. কুইজ সাবমিশন
 const submitQuiz = async (req, res) => {
     const { user_id, quiz_set_id, answers, time_taken } = req.body;
 
@@ -193,9 +187,6 @@ const submitQuiz = async (req, res) => {
             .eq('quiz_set_id', quiz_set_id);
 
         if (fetchError) throw fetchError;
-        if (!correctQuestions || correctQuestions.length === 0) {
-            return res.status(404).json({ success: false, error: "No questions found for this quiz set." });
-        }
 
         let calculatedScore = 0;
         const userAnswers = answers || {};
@@ -205,28 +196,76 @@ const submitQuiz = async (req, res) => {
                 calculatedScore += 1;
             }
         });
-        const { data, error: insertError } = await supabase
+
+        const { error: insertError } = await supabase
             .from('quiz_submissions')
             .insert([{
                 user_id,
                 quiz_set_id,
                 answers: userAnswers,
                 score: calculatedScore,
-                time_taken: time_taken || 0, 
+                time_taken: time_taken || 0,
                 completed_at: new Date().toISOString()
-            }])
-            .select();
+            }]);
 
         if (insertError) throw insertError;
         res.status(201).json({
             success: true,
-            message: "Quiz submitted successfully! Your result has been recorded.",
+            message: "Quiz submitted successfully!",
         });
 
     } catch (error) {
-        console.error("Submission Error:", error.message);
         res.status(500).json({ success: false, error: error.message });
     }
 };
 
-module.exports = { createFullQuiz, getAllQuizzes, deleteQuiz, updateQuiz, getSingleQuiz, getQuizzesForUsers, getSingleQuizForUser, submitQuiz };
+// ৯. কুইজ স্ট্যাটাস আপডেট (এডমিন টগল সুইচ)
+const updateQuizStatus = async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    try {
+        const { data, error } = await supabase
+            .from('quiz_sets')
+            .update({ status })
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) throw error;
+        res.status(200).json({ success: true, message: "Status updated successfully", data });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+const checkAttempt = async (req, res) => {
+    try {
+        const { userId, quizId } = req.params;
+        const { data: existingSubmission, error } = await supabase
+            .from('quiz_submissions')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('quiz_set_id', quizId)
+            .maybeSingle();
+
+        if (error) throw error;
+        
+        res.status(200).json({ hasAttempted: !!existingSubmission });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+module.exports = {
+    createFullQuiz,
+    getAllQuizzes,
+    deleteQuiz,
+    updateQuiz,
+    getSingleQuiz,
+    getQuizzesForUsers,
+    getSingleQuizForUser,
+    submitQuiz,
+    updateQuizStatus,
+    checkAttempt
+};

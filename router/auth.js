@@ -45,8 +45,6 @@ router.get('/me', async (req, res) => {
         if (!token) return res.status(401).json({ isAuthenticated: false });
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-        // সরাসরি প্রোফাইল থেকে ডাটা নিন
         const { data: profile, error: profileError } = await supabase
             .from('user_profiles')
             .select('*')
@@ -63,48 +61,45 @@ router.get('/me', async (req, res) => {
         res.status(401).json({ isAuthenticated: false });
     }
 });
+
+
 router.put('/update-profile', async (req, res) => {
     try {
-        const {
-            name, phone, district, institution,
-            education_type,
-            grade_level, current_level, sdg_role, round_type, activities_role, profile_image_url
-        } = req.body;
+        const authHeader = req.headers.authorization;
+        const token = authHeader?.split(' ')[1];
 
-        const token = req.headers.authorization?.split(' ')[1];
         if (!token) return res.status(401).json({ error: "No token provided" });
 
-        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-        if (authError || !user) return res.status(401).json({ error: "Unauthorized" });
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        
+        // সবথেকে নিরাপদ আইডি হ্যান্ডলিং: 
+        // পেলোডে sub থাকুক বা user_id, সে যেকোনো একটা খুঁজে নেবে
+        const userId = decoded.sub || decoded.user_id || decoded.id;
+
+        if (!userId) {
+            return res.status(401).json({ error: "Unauthorized: User ID not found in token" });
+        }
+
+        // রিকোয়েস্ট বডি থেকে অপ্রয়োজনীয় ডাটা বাদ দেওয়া
+        const updates = { ...req.body };
+        delete updates.email;
+        delete updates.user_id; 
+        delete updates.id;
 
         const { data, error } = await supabase
             .from('user_profiles')
-            .update({
-                name,
-                phone,
-                district,
-                institution,
-                education_type,
-                grade_level,
-                current_level,
-                sdg_role,
-                round_type,
-                activities_role,
-                profile_image_url
-            })
-            .eq('user_id', user.id)
+            .update(updates)
+            .eq('user_id', userId) // এখানে userId হবে সুপাবেসের সেই UUID
             .select();
 
-        if (error) return res.status(500).json({ error: error.message });
+        if (error) {
+            return res.status(500).json({ error: error.message });
+        }
 
-        res.json({
-            message: "Profile updated successfully",
-            user: data[0]
-        });
+        res.json({ message: "Profile updated successfully", user: data[0] });
     } catch (err) {
-        res.status(500).json({ error: "Something went wrong" });
+        res.status(401).json({ error: "Invalid Token" });
     }
 });
-
 
 module.exports = router;
