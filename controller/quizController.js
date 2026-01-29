@@ -1,6 +1,5 @@
 const supabase = require('../config/db');
 
-// ১. কুইজ তৈরি (ডিফল্ট স্ট্যাটাস 'draft')
 const createFullQuiz = async (req, res) => {
     const { title, category, start_at, ends_at, time_limit, questions } = req.body;
 
