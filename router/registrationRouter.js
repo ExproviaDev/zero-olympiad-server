@@ -35,13 +35,139 @@ const calculateAssignedSDG = (gradeLevel, currentLevel) => {
     return 0; // Default
 };
 
+// router.post('/register', async (req, res) => {
+//     const {
+//         email, password, name, phone, district, institution,
+//         educationType, gradeLevel, currentLevel, activities
+//     } = req.body;
+
+//     try {
+//         let sdgRole = "General Member";
+//         const trimmedGrade = gradeLevel ? gradeLevel.trim() : "";
+
+//         // ১. SDG Role নির্ধারণ লজিক
+//         const activistLevels = [
+//             "Class 5, Grade 5, PYP 5, Taysir, Equivalent",
+//             "Class 6, Grade 6, MYP 1, Mizan, Equivalent",
+//             "Class 7, Grade 7, MYP 2, Nahbameer",
+//             "Class 8, Grade 8, MYP 3, Hedayatun Nahu"
+//         ];
+//         const ambassadorLevels = [
+//             "Class 9, Grade 9, MYP 4, Kafiya and Bekaya, Equivalent",
+//             "Class 10, Grade 10, MYP 5, Kafiya and Bekaya, Equivalent",
+//             "SSC Candidate, O Level Candidate, Kafiya and Bekaya Equivalent",
+//             "Class 11 (HSC), Grade 11, DP 1, Jalalayn, Equivalent",
+//             "Class 12 (HSC), Grade 12, DP 2, Jalalayn, Equivalent",
+//             "HSC Candidate, A Level Candidate, Jalalayn Equivalent"
+//         ];
+
+//         if (activistLevels.includes(trimmedGrade)) {
+//             sdgRole = "SDG Activist";
+//         } else if (ambassadorLevels.includes(trimmedGrade)) {
+//             sdgRole = "SDG Ambassador";
+//         } else if (currentLevel && currentLevel !== "None of These" && currentLevel !== "N/A") {
+//             sdgRole = "SDG Achiever";
+//         }
+
+//         // ২. SDG Number ক্যালকুলেশন
+//         const assignedSDGNumber = calculateAssignedSDG(gradeLevel, currentLevel);
+
+//         const roleMapping = {
+//             "Being a campus ambassador, I want to collect registrations, conduct online and offline study session of the course provided by the United Nations etc. | The best campus ambassador will be awarded": "campus ambassador",
+//             "I want to work in event management at the grand finale in Dhaka | The best event manager will be awarded": "event manager",
+//             "I want only to participate in the Zero Olympiad as a competitor, I don't want to do any such work.": "contestor"
+//         };
+
+//         const assignedRoles = Array.isArray(activities)
+//             ? activities.map(act => roleMapping[act]).filter(Boolean)
+//             : [];
+//         const activitiesRole = assignedRoles.length > 0 ? assignedRoles.join(', ') : "contestor";
+
+//         // ৩. Supabase Auth SignUp
+//         const { data: authData, error: authError } = await supabase.auth.signUp({
+//             email,
+//             password,
+//         });
+
+//         if (authError) {
+//             let errorMessage = authError.message;
+//             if (authError.message.includes("User already registered")) {
+//                 errorMessage = "This email is already linked to an existing account.";
+//             }
+//             return res.status(400).json({ message: errorMessage });
+//         }
+
+//         const newUserId = authData?.user?.id;
+//         if (!newUserId) return res.status(400).json({ message: "Incorrect Information!" });
+
+//         // ৪. user_profiles টেবিলে প্রোফাইল ইনসার্ট
+//         const { error: profileError } = await supabase
+//             .from('user_profiles')
+//             .insert([{
+//                 user_id: newUserId,
+//                 name,
+//                 email,
+//                 phone,
+//                 district,
+//                 institution,
+//                 education_type: educationType,
+//                 grade_level: gradeLevel,
+//                 current_level: (currentLevel && currentLevel !== "None of These") ? currentLevel : gradeLevel,
+//                 sdg_role: sdgRole,
+//                 activities_role: activitiesRole,
+//                 assigned_sdg_number: assignedSDGNumber,
+//                 round_type: "initial round_1",
+//                 role: "user"
+//             }]);
+
+//         if (profileError) throw profileError;
+
+//         // ৫. round_1_initial টেবিলে অটোমেটিক এন্ট্রি তৈরি
+//         const { error: round1Error } = await supabase
+//             .from('round_1_initial')
+//             .insert([{
+//                 user_id: newUserId,
+//                 quiz_score: 0,
+//                 is_qualified: false
+//             }]);
+
+//         if (round1Error) console.error("Round 1 Entry Error:", round1Error.message);
+
+//         res.status(201).json({
+//             message: "Registration Successful, Verify Your Email Please",
+//             user: authData.user
+//         });
+
+//     } catch (err) {
+//         console.error("Global Catch Error:", err);
+//         res.status(500).json({ message: 'Server error, please try again later.' });
+//     }
+// });
+
+
 router.post('/register', async (req, res) => {
+    // paymentToken-টিও req.body থেকে নিয়ে নিলাম
     const {
         email, password, name, phone, district, institution,
-        educationType, gradeLevel, currentLevel, activities
+        educationType, gradeLevel, currentLevel, activities, paymentToken
     } = req.body;
 
     try {
+        // --- নতুন সংযোজন: পেমেন্ট ভেরিফিকেশন চেক ---
+        const { data: paymentRecord, error: pError } = await supabase
+            .from('payment_verifications')
+            .select('*')
+            .eq('verification_token', paymentToken)
+            .eq('status', 'completed') // নিশ্চিত করো যে পেমেন্ট সফল হয়েছিল
+            .single();
+
+        if (pError || !paymentRecord) {
+            return res.status(400).json({
+                message: "পেমেন্ট ভেরিফিকেশন ব্যর্থ! অনুগ্রহ করে আগে সফলভাবে পেমেন্ট সম্পন্ন করুন।"
+            });
+        }
+        // ----------------------------------------
+
         let sdgRole = "General Member";
         const trimmedGrade = gradeLevel ? gradeLevel.trim() : "";
 
@@ -133,6 +259,13 @@ router.post('/register', async (req, res) => {
 
         if (round1Error) console.error("Round 1 Entry Error:", round1Error.message);
 
+        // --- নতুন সংযোজন: টোকেনটিকে 'used' হিসেবে আপডেট করা ---
+        await supabase
+            .from('payment_verifications')
+            .update({ status: 'used' })
+            .eq('verification_token', paymentToken);
+        // --------------------------------------------------
+
         res.status(201).json({
             message: "Registration Successful, Verify Your Email Please",
             user: authData.user
@@ -143,7 +276,6 @@ router.post('/register', async (req, res) => {
         res.status(500).json({ message: 'Server error, please try again later.' });
     }
 });
-
 router.post('/forgot-password', async (req, res) => {
     const { email } = req.body;
 
