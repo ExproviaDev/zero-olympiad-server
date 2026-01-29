@@ -91,15 +91,12 @@ exports.bkashCallback = async (req, res) => {
     if (status === 'success') {
         try {
             const headers = await getAuthHeaders();
-            
-            // Execute Payment
+
             let { data } = await bkashAxios.post(
                 `${process.env.BKASH_BASE_URL}/tokenized/checkout/execute`, 
                 { paymentID }, 
                 { headers }
             );
-
-            // যদি Execute ফেইল করে কিন্তু টাকা কেটে নেয়, তবে Query API দিয়ে চেক করা
             if (data.statusCode !== '0000') {
                 data = await queryPayment(paymentID, headers);
             }
@@ -109,7 +106,7 @@ exports.bkashCallback = async (req, res) => {
 
                 await supabase.from('payment_verifications').insert({
                     payment_id: paymentID,
-                    trx_id: data.trxID, // বিকাশ ট্রানজেকশন আইডি
+                    trx_id: data.trxID, 
                     amount: data.amount,
                     verification_token: regToken,
                     status: 'completed'
