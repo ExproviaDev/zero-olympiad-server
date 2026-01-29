@@ -4,6 +4,9 @@ const registrationRouter = require("./router/registrationRouter");
 const authRouter = require("./router/auth")
 const quizRouter = require('./router/quizRouter');
 const adminRouter = require('./router/adminRouter')
+const leaderboardRouter = require('./router/leaderboardRouter');
+const videoRouter = require('./router/videoRouter');
+const bkashRoutes = require('./router/bkashRouter');
 require('dotenv').config();
 
 
@@ -30,7 +33,9 @@ app.use('/api/user', registrationRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/admin', quizRouter);
 app.use('/api/admin', adminRouter);
-
+app.use('/api/leaderboard', leaderboardRouter);
+app.use('/api/video', videoRouter);
+app.use('/api/bkash', bkashRoutes);
 
 
 app.get("/", async (req, res)=>{
@@ -38,7 +43,7 @@ app.get("/", async (req, res)=>{
     res.send(x);
 })
 
-// app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
 
 module.exports = app

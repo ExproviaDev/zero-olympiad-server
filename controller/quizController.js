@@ -148,8 +148,6 @@ const getQuizzesForUsers = async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 };
-
-// ৭. ইউজারদের জন্য একটি কুইজ (Published হতে হবে)
 const getSingleQuizForUser = async (req, res) => {
     try {
         const { id } = req.params;
@@ -160,7 +158,7 @@ const getSingleQuizForUser = async (req, res) => {
                 questions (id, quiz_set_id, question_text, options)
             `)
             .eq('id', id)
-            .eq('status', 'published') // <--- Security filter added
+            .eq('status', 'published')
             .single();
 
         if (error || !data) {
@@ -172,9 +170,10 @@ const getSingleQuizForUser = async (req, res) => {
     }
 };
 
-// ৮. কুইজ সাবমিশন
 const submitQuiz = async (req, res) => {
-    const { user_id, quiz_set_id, answers, time_taken } = req.body;
+    const { user_id, quiz_set_id, answers, time_taken, sdgCategory, roundNumber } = req.body;
+
+    console.log(`Submitting quiz for User: ${user_id}, Category: ${sdgCategory}`);
 
     if (!user_id || !quiz_set_id) {
         return res.status(400).json({ success: false, error: "Missing user_id or quiz_set_id" });
@@ -197,6 +196,7 @@ const submitQuiz = async (req, res) => {
             }
         });
 
+        const finalTimeTaken = Number(time_taken) || 0;
         const { error: insertError } = await supabase
             .from('quiz_submissions')
             .insert([{
@@ -204,22 +204,40 @@ const submitQuiz = async (req, res) => {
                 quiz_set_id,
                 answers: userAnswers,
                 score: calculatedScore,
-                time_taken: time_taken || 0,
+                time_taken: finalTimeTaken,
                 completed_at: new Date().toISOString()
             }]);
 
         if (insertError) throw insertError;
+
+
+        const { error: perfError } = await supabase
+            .from('round_performances')
+            .upsert({
+                user_id: user_id,
+                quiz_set_id: quiz_set_id,
+                round_number: roundNumber || 1,
+                quiz_score: calculatedScore,
+                time_taken: finalTimeTaken,
+                total_calculated_score: calculatedScore,
+                sdg_category: sdgCategory || "SDG Activist",
+                is_promoted: false
+            }, { onConflict: 'user_id, round_number' });
+
+        if (perfError) throw perfError;
+
         res.status(201).json({
             success: true,
-            message: "Quiz submitted successfully!",
+            message: "Quiz submitted and synced with leaderboard!",
+            score: calculatedScore,
+            category: sdgCategory
         });
 
     } catch (error) {
+        console.error("Critical Sync Error:", error.message);
         res.status(500).json({ success: false, error: error.message });
     }
 };
-
-// ৯. কুইজ স্ট্যাটাস আপডেট (এডমিন টগল সুইচ)
 const updateQuizStatus = async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
@@ -250,7 +268,7 @@ const checkAttempt = async (req, res) => {
             .maybeSingle();
 
         if (error) throw error;
-        
+
         res.status(200).json({ hasAttempted: !!existingSubmission });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
