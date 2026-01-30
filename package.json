@@ -11,14 +11,17 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@sendgrid/mail": "^8.1.6",
     "@supabase/supabase-js": "^2.87.1",
     "aws": "^0.0.3-2",
     "axios": "^1.13.4",
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
     "postgres": "^3.4.7",
+    "resend": "^6.9.1",
     "serverless-http": "^4.0.0",
     "uuid": "^13.0.0"
   },
