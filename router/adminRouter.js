@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { verifyAdmin, verifyToken } = require("../middleware/authMiddleware");
-const { getAllUsers, updateUserStatus, deleteUser } = require("../controller/userController");
+const { getAllUsers, updateUserStatus, deleteUser, addMember } = require("../controller/userController");
 
 // নতুন অ্যাডমিন কন্ট্রোলার থেকে ফাংশনগুলো ইম্পোর্ট করা হচ্ছে
 const { 
@@ -11,6 +11,8 @@ const {
     submitJuryScore 
 } = require("../controller/adminController");
 
+
+router.post("/add-member", verifyToken, verifyAdmin, addMember);
 router.get("/all-users", verifyAdmin, getAllUsers);
 router.put("/update-user/:id", verifyAdmin, updateUserStatus);
 router.delete("/delete-user/:id", verifyAdmin, deleteUser);

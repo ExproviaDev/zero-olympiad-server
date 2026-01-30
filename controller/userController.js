@@ -1,4 +1,90 @@
 const supabase = require("../config/db");
+const sgMail = require('@sendgrid/mail');
+const crypto = require('crypto');
+
+
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+
+
+const addMember = async (req, res) => {
+  const { email, role, name, phone } = req.body;
+
+  try {
+    // ১. ৮ ক্যারেক্টারের টেম্পোরারি পাসওয়ার্ড তৈরি
+    const tempPassword = crypto.randomBytes(4).toString('hex');
+
+    // ২. সুপাবেস অথেনটিকেশনে ইউজার রেজিস্টার করা
+    // 'supabase.auth.admin' use korchi jate admin power diye user create hoy
+    const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
+      email: email,
+      password: tempPassword,
+      email_confirm: true, // Auto confirm jate user-ke mail verify na korte hoy
+      user_metadata: { name: name, role: role }
+    });
+
+    if (authError) throw authError;
+
+    // ৩. ইউজার প্রোফাইল টেবলে ডাটা সেভ করা (Auth ID link kore)
+    const { error: profileError } = await supabase
+      .from("user_profiles")
+      .insert([
+        {
+          user_id: authUser.user.id,
+          email: email,
+          name: name || 'Jury Member',
+          phone: phone || "00000000000", // Not Null field
+          role: role || 'manager',
+
+          // --- Tomar table-er baki NOT NULL field gulo ---
+          district: "N/A",
+          institution: "Zero Olympiad",
+          education_type: "General",
+          grade_level: "N/A",
+          current_level: "N/A",
+          sdg_role: "Volunteer",
+          activities_role: "Staff",
+          assigned_sdg_number: 0,
+          round_type: "staff_entry",
+          is_blocked: false
+        }
+      ]);
+
+    if (profileError) throw profileError;
+
+    // ৪. SendGrid Email Logic (Tomar template-tai thakbe)
+    const msg = {
+      to: email,
+      from: process.env.SENDER_EMAIL,
+      subject: 'Invitation: Your Access to Zero Olympiad Jury Panel',
+      html: `
+        <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden;">
+            <div style="background-color: #2563eb; padding: 40px; text-align: center;">
+                <h1 style="color: white; margin: 0; font-size: 28px;">Zero Olympiad</h1>
+                <p style="color: #bfdbfe; margin-top: 10px;">Welcome to the Jury Panel</p>
+            </div>
+            <div style="padding: 30px; color: #374151; line-height: 1.6;">
+                <h2 style="color: #1e3a8a;">Hello ${name},</h2>
+                <p>We are excited to inform you that you have been added as a <b>${role === 'manager' ? 'Jury (Manager)' : role}</b>.</p>
+                <div style="background-color: #f3f4f6; padding: 25px; border-radius: 8px; border: 1px dashed #9ca3af; margin: 25px 0;">
+                    <p style="margin: 8px 0;"><strong>User Email:</strong> ${email}</p>
+                    <p style="margin: 8px 0;"><strong>Temporary Password:</strong> <span style="color: #dc2626; font-weight: bold; font-size: 18px;">${tempPassword}</span></p>
+                </div>
+                <p style="font-size: 14px; color: #6b7280;"><b>Note:</b> Change your password after your first login.</p>
+            </div>
+        </div>
+      `,
+    };
+
+    await sgMail.send(msg);
+
+    res.status(200).json({ success: true, message: "Member registered & invitation email sent!" });
+
+  } catch (error) {
+    console.error("Add Member Error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+// ২. সব ইউজার লিস্ট নিয়ে আসা
 const getAllUsers = async (req, res) => {
   try {
     const { data, error } = await supabase
@@ -12,6 +98,8 @@ const getAllUsers = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+// ৩. ইউজারের রোল বা ব্লক স্ট্যাটাস আপডেট করা
 const updateUserStatus = async (req, res) => {
   const { id } = req.params;
   const { role, is_blocked } = req.body;
@@ -28,6 +116,8 @@ const updateUserStatus = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+// ৪. ইউজার ডিলিট করা
 const deleteUser = async (req, res) => {
   const { id } = req.params;
   try {
@@ -43,4 +133,4 @@ const deleteUser = async (req, res) => {
   }
 };
 
-module.exports = { getAllUsers, updateUserStatus, deleteUser };
+module.exports = { addMember, getAllUsers, updateUserStatus, deleteUser };
