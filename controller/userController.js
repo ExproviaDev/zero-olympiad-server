@@ -10,21 +10,15 @@ const addMember = async (req, res) => {
   const { email, role, name, phone } = req.body;
 
   try {
-    // ১. ৮ ক্যারেক্টারের টেম্পোরারি পাসওয়ার্ড তৈরি
     const tempPassword = crypto.randomBytes(4).toString('hex');
-
-    // ২. সুপাবেস অথেনটিকেশনে ইউজার রেজিস্টার করা
-    // 'supabase.auth.admin' use korchi jate admin power diye user create hoy
     const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
       email: email,
       password: tempPassword,
-      email_confirm: true, // Auto confirm jate user-ke mail verify na korte hoy
+      email_confirm: true,
       user_metadata: { name: name, role: role }
     });
 
     if (authError) throw authError;
-
-    // ৩. ইউজার প্রোফাইল টেবলে ডাটা সেভ করা (Auth ID link kore)
     const { error: profileError } = await supabase
       .from("user_profiles")
       .insert([
@@ -32,10 +26,8 @@ const addMember = async (req, res) => {
           user_id: authUser.user.id,
           email: email,
           name: name || 'Jury Member',
-          phone: phone || "00000000000", // Not Null field
+          phone: phone || "00000000000",
           role: role || 'manager',
-
-          // --- Tomar table-er baki NOT NULL field gulo ---
           district: "N/A",
           institution: "Zero Olympiad",
           education_type: "General",
@@ -50,8 +42,6 @@ const addMember = async (req, res) => {
       ]);
 
     if (profileError) throw profileError;
-
-    // ৪. SendGrid Email Logic (Tomar template-tai thakbe)
     const msg = {
       to: email,
       from: process.env.SENDER_EMAIL,
@@ -67,7 +57,7 @@ const addMember = async (req, res) => {
                 <p>We are excited to inform you that you have been added as a <b>${role === 'manager' ? 'Jury (Manager)' : role}</b>.</p>
                 <div style="background-color: #f3f4f6; padding: 25px; border-radius: 8px; border: 1px dashed #9ca3af; margin: 25px 0;">
                     <p style="margin: 8px 0;"><strong>User Email:</strong> ${email}</p>
-                    <p style="margin: 8px 0;"><strong>Temporary Password:</strong> <span style="color: #dc2626; font-weight: bold; font-size: 18px;">${tempPassword}</span></p>
+                    <p style="margin: 8px 0;"><strong>Password:</strong> <span style="color: #dc2626; font-weight: bold; font-size: 18px;">${tempPassword}</span></p>
                 </div>
                 <p style="font-size: 14px; color: #6b7280;"><b>Note:</b> Change your password after your first login.</p>
             </div>
@@ -84,7 +74,6 @@ const addMember = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
-// ২. সব ইউজার লিস্ট নিয়ে আসা
 const getAllUsers = async (req, res) => {
   try {
     const { data, error } = await supabase
@@ -98,8 +87,6 @@ const getAllUsers = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
-
-// ৩. ইউজারের রোল বা ব্লক স্ট্যাটাস আপডেট করা
 const updateUserStatus = async (req, res) => {
   const { id } = req.params;
   const { role, is_blocked } = req.body;
@@ -116,8 +103,6 @@ const updateUserStatus = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
-
-// ৪. ইউজার ডিলিট করা
 const deleteUser = async (req, res) => {
   const { id } = req.params;
   try {

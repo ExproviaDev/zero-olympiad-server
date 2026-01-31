@@ -40,4 +40,30 @@ const verifyAdmin = async (req, res, next) => {
   }
 };
 
-module.exports = { verifyToken, verifyAdmin };
+
+// ২. জুরি বোর্ড / স্টাফ এক্সেস (Jury & Admin both can enter)
+const verifyStaff = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.split(" ")[1];
+
+  if (!token) return res.status(401).json({ success: false, error: "Unauthorized!" });
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // Role jodi Admin hoy athoba Manager (Jury), tobei allow korbe
+    if (decoded.role === "admin" || decoded.role === "manager") {
+      req.user = decoded;
+      next();
+    } else {
+      return res.status(403).json({
+        success: false,
+        error: "Access Denied! Staff/Jury access only."
+      });
+    }
+  } catch (error) {
+    return res.status(401).json({ success: false, error: "Invalid token." });
+  }
+};
+
+module.exports = { verifyToken, verifyAdmin, verifyStaff };
