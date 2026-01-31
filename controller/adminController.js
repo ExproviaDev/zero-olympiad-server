@@ -110,10 +110,71 @@ const submitJuryScore = async (req, res) => {
     }
 };
 
+const getDashboardStats = async (req, res) => {
+    try {
+        // ১. Total Enrolment (সব ইউজার)
+        const { count: totalEnrolment } = await supabase
+            .from('user_profiles')
+            .select('*', { count: 'exact', head: true });
+
+        // ২. Total Participant (যাদের assigned_sdg_number আছে)
+        const { count: totalParticipant } = await supabase
+            .from('user_profiles')
+            .select('*', { count: 'exact', head: true })
+            .not('assigned_sdg_number', 'is', null);
+
+        // ৩. Total 2nd Round Students
+        const { count: secondRoundCount } = await supabase
+            .from('round_2_selection')
+            .select('*', { count: 'exact', head: true });
+
+        // ৪. Total Finalists (যাদের স্ট্যাটাস 'selected')
+        const { count: finalistCount } = await supabase
+            .from('round_2_selection')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'selected');
+
+        // ৫. Graph Data: ১৭টি SDG-এর রেজিস্ট্রেশন সংখ্যা
+        const { data: sdgStatsData, error: sdgError } = await supabase
+            .from('user_profiles')
+            .select('assigned_sdg_number');
+
+        if (sdgError) throw sdgError;
+
+        // SDG গ্রাফের জন্য ডাটা প্রসেস করা (১ থেকে ১৭ পর্যন্ত)
+        const sdgCounts = {};
+        for (let i = 1; i <= 17; i++) sdgCounts[i] = 0; // ইনিশিয়াল ০ সেট করা
+
+        sdgStatsData.forEach(user => {
+            if (user.assigned_sdg_number) {
+                sdgCounts[user.assigned_sdg_number] = (sdgCounts[user.assigned_sdg_number] || 0) + 1;
+            }
+        });
+
+        const sdg_registrations = Object.keys(sdgCounts).map(key => ({
+            label: `SDG ${key}`,
+            total: sdgCounts[key]
+        }));
+
+        res.status(200).json({
+            total_enrolment: totalEnrolment || 0,
+            total_participant: totalParticipant || 0,
+            second_round_students: secondRoundCount || 0,
+            total_finalists: finalistCount || 0,
+            sdg_registrations: sdg_registrations
+        });
+
+    } catch (err) {
+        console.error("Dashboard Stats Error:", err.message);
+        res.status(500).json({ error: "ড্যাশবোর্ড ডাটা আনতে সমস্যা হয়েছে।" });
+    }
+};
+
 // সব ফাংশন একসাথে এক্সপোর্ট
 module.exports = {
     getCompetitionSettings,
     updateCompetitionSettings,
     getRound2Submissions,
-    submitJuryScore
+    submitJuryScore,
+    getDashboardStats
 };
