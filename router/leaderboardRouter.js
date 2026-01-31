@@ -1,17 +1,9 @@
+// router/leaderboardRouter.js
 const express = require('express');
-const { verifyToken, verifyAdmin } = require('../middleware/authMiddleware');
-const { 
-    submitVideoLink,
-    updateJudgeScore,
-    getLeaderboard,
-    setPassMarkAndPromote 
-} = require('../controller/leaderboardController');
-
 const router = express.Router();
+const { verifyToken } = require('../middleware/authMiddleware'); // যদি অথেনটিফিকেশন লাগে
+const { getLeaderboardData } = require('../controller/leaderboardController');
 
-router.get('/view', verifyToken, getLeaderboard);
-router.post('/submit-video', verifyToken, submitVideoLink);
-router.patch('/judge-score', verifyToken, verifyAdmin, updateJudgeScore);
-router.post('/set-pass-mark', verifyToken, verifyAdmin, setPassMarkAndPromote);
+router.get('/',verifyToken, getLeaderboardData);
 
 module.exports = router;

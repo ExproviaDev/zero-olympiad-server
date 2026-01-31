@@ -4,9 +4,10 @@ const registrationRouter = require("./router/registrationRouter");
 const authRouter = require("./router/auth")
 const quizRouter = require('./router/quizRouter');
 const adminRouter = require('./router/adminRouter')
-const leaderboardRouter = require('./router/leaderboardRouter');
+const markRouter = require('./router/markRouter');
 const videoRouter = require('./router/videoRouter');
 const bkashRoutes = require('./router/bkashRouter');
+const leaderboardRouter = require('./router/leaderboardRouter');
 require('dotenv').config();
 
 
@@ -33,9 +34,10 @@ app.use('/api/user', registrationRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/admin', quizRouter);
 app.use('/api/admin', adminRouter);
-app.use('/api/leaderboard', leaderboardRouter);
+app.use('/api/mark', markRouter);
 app.use('/api/video', videoRouter);
 app.use('/api/bkash', bkashRoutes);
+app.use('/api/leaderboard', leaderboardRouter);
 
 
 app.get("/", async (req, res)=>{

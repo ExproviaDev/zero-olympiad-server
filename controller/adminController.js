@@ -53,9 +53,14 @@ const updateCompetitionSettings = async (req, res) => {
 };
 
 // ৩. জুরিদের জন্য রাউন্ড ২-এর ইউজার লিস্ট
+// ৩. জুরিদের জন্য রাউন্ড ২-এর ইউজার লিস্ট (আপডেটেড)
 const getRound2Submissions = async (req, res) => {
     try {
-        const { sdg_number } = req.query;
+        const { sdg_number, status, page = 1, limit = 10 } = req.query;
+
+        // Pagination Logic
+        const from = (page - 1) * limit;
+        const to = from + limit - 1;
 
         let query = supabase
             .from('round_2_selection')
@@ -65,32 +70,53 @@ const getRound2Submissions = async (req, res) => {
                 jury_score,
                 jury_comments,
                 status,
+                updated_at,
                 user_profiles!inner (
                     name,
                     email,
                     institution,
                     assigned_sdg_number
                 )
-            `);
+            `, { count: 'exact' }); // total count-o pathabo pagination er jonno
 
-        // SDG নাম্বার থাকলে ফিল্টার করবে
+        // ১. SDG ফিল্টার
         if (sdg_number) {
             query = query.eq('user_profiles.assigned_sdg_number', sdg_number);
         }
 
-        const { data, error } = await query;
+        // ২. স্ট্যাটাস ফিল্টার (Tabs: Pending vs Evaluated)
+        if (status === 'evaluated') {
+            // যাদের মার্ক দেওয়া হয়েছে
+            query = query.neq('status', 'pending');
+        } else {
+            // যাদের মার্ক দেওয়া হয়নি
+            query = query.eq('status', 'pending');
+        }
+
+        // ৩. প্যাজিনেশন অ্যাপ্লাই করা এবং সর্টিং (নতুন গুলো আগে)
+        query = query
+            .order('updated_at', { ascending: false })
+            .range(from, to);
+
+        const { data, error, count } = await query;
+
         if (error) throw error;
 
-        res.status(200).json(data);
+        res.status(200).json({
+            data,
+            total: count,
+            page: parseInt(page),
+            limit: parseInt(limit)
+        });
+
     } catch (err) {
         console.error("Jury Fetch Error:", err.message);
         res.status(500).json({ message: "ডাটা লোড করতে সমস্যা হয়েছে।" });
     }
 };
-
 // ৪. জুরি মার্ক এবং কমেন্ট আপডেট করা
 const submitJuryScore = async (req, res) => {
-    const { submission_id, score, comments, status } = req.body;
+    const { submission_id, score, comments } = req.body;
 
     try {
         const { data, error } = await supabase
@@ -98,7 +124,8 @@ const submitJuryScore = async (req, res) => {
             .update({
                 jury_score: score,
                 jury_comments: comments,
-                status: status || 'reviewed'
+                status: 'reviewed', // মার্ক দিলেই স্ট্যাটাস চেঞ্জ
+                updated_at: new Date().toISOString()
             })
             .eq('id', submission_id);
 
