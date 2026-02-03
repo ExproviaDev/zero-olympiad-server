@@ -20,8 +20,6 @@ router.post('/login', async (req, res) => {
             .single();
 
         if (profileError || !profile) return res.status(404).json({ message: "Profile not found." });
-
-        // কাস্টম টোকেন তৈরি (যেখানে role থাকবে)
         const customToken = jwt.sign(
             { sub: authData.user.id, role: profile.role, email: authData.user.email },
             process.env.JWT_SECRET,
@@ -30,7 +28,7 @@ router.post('/login', async (req, res) => {
 
         res.status(200).json({
             message: "Login successful!",
-            token: customToken, // এই টোকেনটি ফ্রন্টএন্ডে সেভ করবেন
+            token: customToken,
             user: profile
         });
 
@@ -71,16 +69,13 @@ router.put('/update-profile', async (req, res) => {
         if (!token) return res.status(401).json({ error: "No token provided" });
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        
-        // সবথেকে নিরাপদ আইডি হ্যান্ডলিং: 
-        // পেলোডে sub থাকুক বা user_id, সে যেকোনো একটা খুঁজে নেবে
+
         const userId = decoded.sub || decoded.user_id || decoded.id;
 
         if (!userId) {
             return res.status(401).json({ error: "Unauthorized: User ID not found in token" });
         }
 
-        // রিকোয়েস্ট বডি থেকে অপ্রয়োজনীয় ডাটা বাদ দেওয়া
         const updates = { ...req.body };
         delete updates.email;
         delete updates.user_id; 
@@ -89,7 +84,7 @@ router.put('/update-profile', async (req, res) => {
         const { data, error } = await supabase
             .from('user_profiles')
             .update(updates)
-            .eq('user_id', userId) // এখানে userId হবে সুপাবেসের সেই UUID
+            .eq('user_id', userId)
             .select();
 
         if (error) {

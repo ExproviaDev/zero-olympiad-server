@@ -8,6 +8,7 @@ const markRouter = require('./router/markRouter');
 const videoRouter = require('./router/videoRouter');
 const bkashRoutes = require('./router/bkashRouter');
 const leaderboardRouter = require('./router/leaderboardRouter');
+const announcementRouter = require('./router/announcementRouter');
 require('dotenv').config();
 
 
@@ -39,6 +40,8 @@ app.use('/api/mark', markRouter);
 app.use('/api/video', videoRouter);
 app.use('/api/bkash', bkashRoutes);
 app.use('/api/leaderboard', leaderboardRouter);
+// Announcement Routes
+app.use('/api/announcement', announcementRouter);
 
 
 app.get("/", async (req, res)=>{
