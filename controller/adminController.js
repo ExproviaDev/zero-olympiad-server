@@ -1,6 +1,6 @@
 const supabase = require('../config/db');
 
-// ১. কম্পিটিশন সেটিংস নিয়ে আসা
+// ১. কম্পিটিশন সেটিংস নিয়ে আসা
 const getCompetitionSettings = async (req, res) => {
     try {
         const { data, error } = await supabase
@@ -35,24 +35,20 @@ const updateCompetitionSettings = async (req, res) => {
                 round_3_start, round_3_end, round_3_has_quiz, round_3_has_video,
                 updated_at: new Date().toISOString()
             })
-            .eq('id', 1); // তোমার টেবিলে আইডি ১ এর রো-কে আপডেট করবে
+            .eq('id', 1);
 
         if (error) throw error;
 
         res.status(200).json({
             success: true,
-            message: "সব রাউন্ডের সেটিংস সফলভাবে আপডেট হয়েছে।",
+            message: "সব রাউন্ডের সেটিংস সফলভাবে আপডেট হয়েছে।",
             data
         });
     } catch (err) {
-        res.status(500).json({
-            success: false,
-            error: err.message
-        });
+        res.status(500).json({ success: false, error: err.message });
     }
 };
 
-// ৩. জুরিদের জন্য রাউন্ড ২-এর ইউজার লিস্ট
 // ৩. জুরিদের জন্য রাউন্ড ২-এর ইউজার লিস্ট (আপডেটেড)
 const getRound2Submissions = async (req, res) => {
     try {
@@ -68,6 +64,7 @@ const getRound2Submissions = async (req, res) => {
                 id,
                 video_link,
                 jury_score,
+                score_details, 
                 jury_comments,
                 status,
                 updated_at,
@@ -77,23 +74,23 @@ const getRound2Submissions = async (req, res) => {
                     institution,
                     assigned_sdg_number
                 )
-            `, { count: 'exact' }); // total count-o pathabo pagination er jonno
+            `, { count: 'exact' });
+        // 👆 'score_details' যোগ করা হয়েছে যাতে এডিট করার সময় আগের ডাটা লোড হয়
 
         // ১. SDG ফিল্টার
         if (sdg_number) {
             query = query.eq('user_profiles.assigned_sdg_number', sdg_number);
         }
 
-        // ২. স্ট্যাটাস ফিল্টার (Tabs: Pending vs Evaluated)
+        // ২. স্ট্যাটাস ফিল্টার
         if (status === 'evaluated') {
-            // যাদের মার্ক দেওয়া হয়েছে
+            // 'evaluated' অথবা 'reviewed' স্ট্যাটাস চেক করা হচ্ছে
             query = query.neq('status', 'pending');
         } else {
-            // যাদের মার্ক দেওয়া হয়নি
             query = query.eq('status', 'pending');
         }
 
-        // ৩. প্যাজিনেশন অ্যাপ্লাই করা এবং সর্টিং (নতুন গুলো আগে)
+        // ৩. প্যাজিনেশন এবং সর্টিং
         query = query
             .order('updated_at', { ascending: false })
             .range(from, to);
@@ -111,66 +108,79 @@ const getRound2Submissions = async (req, res) => {
 
     } catch (err) {
         console.error("Jury Fetch Error:", err.message);
-        res.status(500).json({ message: "ডাটা লোড করতে সমস্যা হয়েছে।" });
+        res.status(500).json({ message: "ডাটা লোড করতে সমস্যা হয়েছে।" });
     }
 };
-// ৪. জুরি মার্ক এবং কমেন্ট আপডেট করা
+
+// ৪. জুরি মার্ক এবং কমেন্ট আপডেট করা (আপডেটেড - অটোমেটিক টোটাল ক্যালকুলেশন)
 const submitJuryScore = async (req, res) => {
-    const { submission_id, score, comments } = req.body;
+    // ফ্রন্টএন্ড থেকে score_details অবজেক্ট আসবে
+    const { submission_id, score_details, comments } = req.body;
+
+    if (!submission_id || !score_details) {
+        return res.status(400).json({ message: "Submission ID and Score Details are required." });
+    }
 
     try {
+        // ১. সার্ভার সাইডে টোটাল মার্ক ক্যালকুলেট করা (সিকিউরিটির জন্য)
+        // score_details দেখতে এমন হবে: { "Creativity": 8, "Technical": 9, ... }
+        const calculatedTotal = Object.values(score_details).reduce((acc, val) => acc + parseFloat(val || 0), 0);
+
+        // ২. ডাটাবেস আপডেট
         const { data, error } = await supabase
             .from('round_2_selection')
             .update({
-                jury_score: score,
+                jury_score: calculatedTotal,      // মোট স্কোর (0-100)
+                score_details: score_details,     // ১০টি পয়েন্টের বিস্তারিত (JSON)
                 jury_comments: comments,
-                status: 'reviewed', // মার্ক দিলেই স্ট্যাটাস চেঞ্জ
+                status: 'evaluated',              // স্ট্যাটাস চেঞ্জ
                 updated_at: new Date().toISOString()
             })
             .eq('id', submission_id);
 
         if (error) throw error;
-        res.status(200).json({ message: "মার্ক সফলভাবে সেভ হয়েছে।" });
+
+        res.status(200).json({
+            success: true,
+            message: "মার্ক সফলভাবে সেভ হয়েছে।",
+            total_score: calculatedTotal
+        });
+
     } catch (err) {
         console.error("Submit Score Error:", err.message);
-        res.status(500).json({ message: "মার্ক আপডেট করা সম্ভব হয়নি।" });
+        res.status(500).json({ message: "মার্ক আপডেট করা সম্ভব হয়নি।" });
     }
 };
 
+// ৫. ড্যাশবোর্ড স্ট্যাটস
 const getDashboardStats = async (req, res) => {
     try {
-        // ১. Total Enrolment (সব ইউজার)
         const { count: totalEnrolment } = await supabase
             .from('user_profiles')
             .select('*', { count: 'exact', head: true });
 
-        // ২. Total Participant (যাদের assigned_sdg_number আছে)
         const { count: totalParticipant } = await supabase
             .from('user_profiles')
             .select('*', { count: 'exact', head: true })
             .not('assigned_sdg_number', 'is', null);
 
-        // ৩. Total 2nd Round Students
         const { count: secondRoundCount } = await supabase
             .from('round_2_selection')
             .select('*', { count: 'exact', head: true });
 
-        // ৪. Total Finalists (যাদের স্ট্যাটাস 'selected')
         const { count: finalistCount } = await supabase
             .from('round_2_selection')
             .select('*', { count: 'exact', head: true })
             .eq('status', 'selected');
 
-        // ৫. Graph Data: ১৭টি SDG-এর রেজিস্ট্রেশন সংখ্যা
         const { data: sdgStatsData, error: sdgError } = await supabase
             .from('user_profiles')
             .select('assigned_sdg_number');
 
         if (sdgError) throw sdgError;
 
-        // SDG গ্রাফের জন্য ডাটা প্রসেস করা (১ থেকে ১৭ পর্যন্ত)
         const sdgCounts = {};
-        for (let i = 1; i <= 17; i++) sdgCounts[i] = 0; // ইনিশিয়াল ০ সেট করা
+        for (let i = 1; i <= 17; i++) sdgCounts[i] = 0;
 
         sdgStatsData.forEach(user => {
             if (user.assigned_sdg_number) {
@@ -193,11 +203,10 @@ const getDashboardStats = async (req, res) => {
 
     } catch (err) {
         console.error("Dashboard Stats Error:", err.message);
-        res.status(500).json({ error: "ড্যাশবোর্ড ডাটা আনতে সমস্যা হয়েছে।" });
+        res.status(500).json({ error: "ড্যাশবোর্ড ডাটা আনতে সমস্যা হয়েছে।" });
     }
 };
 
-// সব ফাংশন একসাথে এক্সপোর্ট
 module.exports = {
     getCompetitionSettings,
     updateCompetitionSettings,

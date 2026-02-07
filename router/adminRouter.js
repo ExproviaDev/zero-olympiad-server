@@ -17,7 +17,7 @@ router.delete("/delete-user/:id", verifyAdmin, deleteUser);
 router.put("/update-settings", verifyAdmin, updateCompetitionSettings);
 
 // --- ২. STAFF ACCESS (Admin + Jury/Manager) ---
-router.get("/settings", verifyStaff, getCompetitionSettings);
+router.get("/settings",verifyToken,  getCompetitionSettings);
 router.get("/round2-submissions", verifyToken, verifyStaff, getRound2Submissions);
 router.put("/submit-score", verifyToken, verifyStaff, submitJuryScore);
 router.get("/dashboard-stats", verifyStaff, getDashboardStats);
