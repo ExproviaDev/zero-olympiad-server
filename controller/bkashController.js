@@ -2,7 +2,7 @@ const axios = require('axios');
 const supabase = require('../config/db');
 const crypto = require('crypto');
 
-// bKash Spec অনুযায়ী 30s timeout
+// bKash Spec অনুযায়ী 30s timeout
 const bkashAxios = axios.create({
     timeout: 30000
 });
@@ -68,13 +68,13 @@ exports.createPayment = async (req, res) => {
         const { amount } = req.body;
         const headers = await getAuthHeaders();
 
-        if (!headers) return res.status(500).json({ error: "bKash Auth Failed. Check Terminal." });
+        if (!headers) return res.status(500).json({ error: "bKash Auth Failed." });
 
         const { data } = await bkashAxios.post(`${process.env.BKASH_BASE_URL}/tokenized-checkout/payment/create`, {
             mode: '0011', 
             payerReference: "User_Registration",
             callbackURL: process.env.BKASH_CALLBACK_URL,
-            amount: amount ? amount.toString() : "10",
+            amount: amount ? amount.toString() : "300", 
             currency: "BDT",
             intent: "sale",
             merchantInvoiceNumber: "Inv_" + crypto.randomUUID().substring(0, 8)
@@ -86,143 +86,149 @@ exports.createPayment = async (req, res) => {
 
         res.status(200).json({ bkashURL: data.bkashURL });
     } catch (error) {
-        console.error("Payment Creation Exception:", error.response ? error.response.data : error.message);
+        console.error("Payment Creation Error:", error.message);
         res.status(500).json({ error: "Payment creation failed" });
     }
 };
 
-// --- Callback Handler (Fixed for Invalid Request Body) ---
-// exports.bkashCallback = async (req, res) => {
-//     try {
-//         const { paymentID, status } = req.query;
-
-//         console.log("Callback Hit:", { paymentID, status });
-
-//         if (status === 'cancel' || status === 'failure') {
-//             return res.redirect(`${process.env.FRONTEND_URL}/payment-failed?status=${status}`);
-//         }
-
-//         const headers = await getAuthHeaders();
-//         if (!headers) throw new Error("Auth headers failed during execution");
-
-//         if (status === 'success') {
-//             try {
-//                 // ১. paymentID ক্লিন করা
-//                 const cleanPaymentID = String(paymentID).trim();
-                
-//                 console.log("Executing Payment ID:", cleanPaymentID);
-
-//                 // ২. Execute API Call (Correct Key: paymentId)
-//                 // আপনার PDF এর Page 24, Sample Request দেখুন: "paymentId" (ছোট হাতের d)
-//                 const { data } = await bkashAxios.post(
-//                     `${process.env.BKASH_BASE_URL}/tokenized-checkout/payment/execute`, 
-//                     { paymentId: cleanPaymentID }, // ⚠️ FIX: paymentID -> paymentId
-//                     { headers }
-//                 );
-
-//                 console.log("Execute Response:", data);
-
-//                 if (data && (data.statusCode === '0000' || data.statusCode === '2062')) {
-//                     const verificationToken = crypto.randomUUID();
-//                     const trxId = data.trxID || data.trxId;
-//                     const paymentAmount = data.amount ? parseFloat(data.amount) : 0;
-
-//                     // ৩. ডাটাবেসে সেভ (এখানে আমরা আমাদের কলামের নাম 'payment_id' ব্যবহার করব)
-//                     const { error: dbError } = await supabase.from('payment_verifications').insert({
-//                         payment_id: cleanPaymentID, 
-//                         trx_id: trxId,
-//                         amount: paymentAmount,
-//                         verification_token: verificationToken,
-//                         status: 'completed',
-//                         customer_number: data.payerAccount || data.customerMsisdn
-//                     });
-
-//                     if (dbError) {
-//                         console.error("DB Error (Ignore if payment success):", dbError);
-//                     }
-
-//                     return res.redirect(`${process.env.FRONTEND_URL}/registration?step=3&token=${verificationToken}`);
-//                 } else {
-//                     console.error("Execute Failed Status:", data.statusMessage);
-//                     return res.redirect(`${process.env.FRONTEND_URL}/payment-failed?message=${data.statusMessage}`);
-//                 }
-
-//             } catch (axiosError) {
-//                 console.error("bKash Execute API Error:", axiosError.response ? axiosError.response.data : axiosError.message);
-//                 const errorMsg = axiosError.response?.data?.statusMessage || "Payment Execution Failed";
-//                 return res.redirect(`${process.env.FRONTEND_URL}/payment-failed?error=${encodeURIComponent(errorMsg)}`);
-//             }
-//         }
-//     } catch (error) {
-//         console.error("bKash Callback Exception:", error.message);
-//         res.redirect(`${process.env.FRONTEND_URL}/payment-failed?error=internal_error`);
-//     }
-// };
-
+// --- Execute Payment (Updated with Correct Query URL) ---
 exports.bkashCallback = async (req, res) => {
     try {
         const { paymentID, status } = req.query;
-
-        console.log("Callback Hit:", { paymentID, status });
 
         if (status === 'cancel' || status === 'failure') {
             return res.redirect(`${process.env.FRONTEND_URL}/payment-failed?status=${status}`);
         }
 
         const headers = await getAuthHeaders();
-        if (!headers) throw new Error("Auth headers failed during execution");
+        if (!headers) throw new Error("Auth headers failed");
 
         if (status === 'success') {
-            try {
-                const cleanPaymentID = String(paymentID).trim();
-                console.log("Executing Payment ID:", cleanPaymentID);
+            const cleanPaymentID = String(paymentID).trim();
+            let paymentData;
 
-                // Execute API Call
+            // A. Execute API Call
+            try {
+                console.log("Executing Payment ID:", cleanPaymentID);
                 const { data } = await bkashAxios.post(
                     `${process.env.BKASH_BASE_URL}/tokenized-checkout/payment/execute`, 
                     { paymentId: cleanPaymentID }, 
                     { headers }
                 );
+                paymentData = data;
+                console.log("Execute Response:", paymentData);
 
-                console.log("Execute Response:", data); // সফল হলে এখানে transactionStatus: 'Completed' আসবে
-
-                // ✅ FIX: V2 তে statusCode '0000' আসে না, transactionStatus 'Completed' আসে
-                if (data && data.transactionStatus === 'Completed') {
-                    
-                    const verificationToken = crypto.randomUUID();
-                    const trxId = data.trxID;
-                    const paymentAmount = data.amount ? parseFloat(data.amount) : 0;
-
-                    // ডাটাবেসে সেভ
-                    const { error: dbError } = await supabase.from('payment_verifications').insert({
-                        payment_id: cleanPaymentID, 
-                        trx_id: trxId,
-                        amount: paymentAmount,
-                        verification_token: verificationToken,
-                        status: 'completed',
-                        customer_number: data.payerAccount || data.customerMsisdn
-                    });
-
-                    if (dbError) {
-                        console.error("DB Error (Ignore if payment success):", dbError);
-                    }
-
-                    // সফল হলে রেজিস্ট্রেশন পেজে পাঠানো
-                    return res.redirect(`${process.env.FRONTEND_URL}/registration?step=3&token=${verificationToken}`);
-                } else {
-                    // পেমেন্ট ফেইল হলে
-                    console.error("Execute Failed:", data.statusMessage || "Unknown Error");
-                    return res.redirect(`${process.env.FRONTEND_URL}/payment-failed?message=${data.statusMessage}`);
+            } catch (execError) {
+                console.error("Execute API Failed. Trying Query API Fallback...");
+                
+                // B. Query API Fallback (DOC PAGE 27 অনুযায়ী FIX)
+                try {
+                    const { data: queryData } = await bkashAxios.post(
+                        `${process.env.BKASH_BASE_URL}/tokenized-checkout/query/payment`, // ✅ Correct URL
+                        { paymentId: cleanPaymentID }, // ✅ POST Body
+                        { headers }
+                    );
+                    paymentData = queryData;
+                    console.log("Query API Result:", paymentData);
+                } catch (queryError) {
+                    console.error("Query API also failed:", queryError.message);
+                    return res.redirect(`${process.env.FRONTEND_URL}/payment-failed?error=verification_failed`);
                 }
+            }
 
-            } catch (axiosError) {
-                console.error("bKash Execute API Error:", axiosError.response ? axiosError.response.data : axiosError.message);
-                const errorMsg = axiosError.response?.data?.statusMessage || "Payment Execution Failed";
-                return res.redirect(`${process.env.FRONTEND_URL}/payment-failed?error=${encodeURIComponent(errorMsg)}`);
+            // C. Validate & Save
+            if (paymentData && (paymentData.statusCode === '0000' || paymentData.transactionStatus === 'Completed')) {
+                
+                const finalTrxId = paymentData.trxID || paymentData.trxId;
+                const verificationToken = crypto.randomUUID();
+                const paymentAmount = paymentData.amount ? parseFloat(paymentData.amount) : 0;
+
+                const { error: dbError } = await supabase.from('payment_verifications').insert({
+                    payment_id: cleanPaymentID, 
+                    trx_id: finalTrxId,
+                    amount: paymentAmount,
+                    verification_token: verificationToken,
+                    status: 'completed',
+                    customer_number: paymentData.customerMsisdn || paymentData.payerAccount
+                });
+
+                if (dbError) console.error("DB Error:", dbError);
+
+                return res.redirect(`${process.env.FRONTEND_URL}/registration?step=3&token=${verificationToken}`);
+            
+            } else {
+                return res.redirect(`${process.env.FRONTEND_URL}/payment-failed?message=${paymentData.statusMessage}`);
             }
         }
     } catch (error) {
-        console.error("bKash Callback Exception:", error.message);
+        console.error("Callback Exception:", error.message);
         res.redirect(`${process.env.FRONTEND_URL}/payment-failed?error=internal_error`);
+    }
+};
+
+// --- Query Payment API (Fixed according to Page 27) ---
+exports.queryPayment = async (req, res) => {
+    try {
+        const { paymentID } = req.params;
+        const headers = await getAuthHeaders();
+
+        // ✅ URL: /tokenized-checkout/query/payment
+        // ✅ Method: POST
+        const { data } = await bkashAxios.post(
+            `${process.env.BKASH_BASE_URL}/tokenized-checkout/query/payment`,
+            { paymentId: paymentID },
+            { headers }
+        );
+
+        res.status(200).json(data);
+    } catch (error) {
+        console.error("Query API Error:", error.response ? error.response.data : error.message);
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// --- Search Transaction API (Fixed according to Page 29) ---
+exports.searchTransaction = async (req, res) => {
+    try {
+        const { trxID } = req.params;
+        const headers = await getAuthHeaders();
+        console.log("Searching TRX:", trxID);
+
+        // ✅ URL: /tokenized-checkout/general/search-transaction ( হাইফেন আছে! )
+        // ✅ Method: POST
+        const { data } = await bkashAxios.post(
+            `${process.env.BKASH_BASE_URL}/tokenized-checkout/general/search-transaction`,
+            { trxId: trxID },
+            { headers }
+        );
+
+        res.status(200).json(data);
+    } catch (error) {
+        console.error("Search API Error:", error.response ? error.response.data : error.message);
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// --- Refund API (Page 30) ---
+exports.refundTransaction = async (req, res) => {
+    try {
+        const { paymentId, amount, trxId, reason } = req.body;
+        const headers = await getAuthHeaders();
+
+        const { data } = await bkashAxios.post(
+            `${process.env.BKASH_BASE_URL}/tokenized-checkout/refund/payment/transaction`,
+            {
+                paymentId: paymentId, 
+                refundAmount: amount,
+                trxId: trxId, 
+                sku: "payment",
+                reason: reason || "System refund"
+            },
+            { headers }
+        );
+
+        res.status(200).json(data);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 };
