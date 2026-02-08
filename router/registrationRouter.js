@@ -1,10 +1,10 @@
 const express = require('express');
 const supabase = require('../config/db');
 const router = express.Router();
-const sgMail = require('@sendgrid/mail'); 
+const sgMail = require('@sendgrid/mail');
 
 // SendGrid Setup (Make sure .env has SENDGRID_API_KEY & SENDER_EMAIL)
-sgMail.setApiKey(process.env.SENDGRID_API_KEY); 
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 // --- ইমেইল পাঠানোর ফাংশন ---
 const sendWelcomeEmail = async (email, name, courseDetails) => {
@@ -13,35 +13,94 @@ const sendWelcomeEmail = async (email, name, courseDetails) => {
         from: process.env.SENDER_EMAIL, // আপনার ভেরিফাইড সেন্ডার ইমেইল
         subject: 'Registration Successful - Zero Olympiad',
         html: `
-            <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden;">
-                <div style="background-color: #2563eb; padding: 30px; text-align: center;">
-                    <h1 style="color: white; margin: 0; font-size: 24px;">Zero Olympiad</h1>
-                    <p style="color: #bfdbfe; margin-top: 5px;">Registration Confirmation</p>
-                </div>
-                
-                <div style="padding: 30px; color: #374151; line-height: 1.6;">
-                    <h2 style="color: #1e3a8a;">Dear ${name},</h2>
-                    <p>Assalamu Alaikum. Thank you for registering for the Zero Olympiad.</p>
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0; }
+                    .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+                    .header { background-color: #ffffff; padding: 20px; text-align: center; border-bottom: 3px solid #2563eb; }
+                    .header h1 { color: #2563eb; margin: 0; font-size: 28px; letter-spacing: 1px; }
+                    .content { padding: 30px; color: #333333; line-height: 1.6; }
+                    .greeting { color: #1e3a8a; font-size: 20px; font-weight: bold; margin-bottom: 20px; }
+                    .card { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 20px 0; border-left: 5px solid #2563eb; }
+                    .btn { display: inline-block; background-color: #2563eb; color: #ffffff !important; padding: 12px 25px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-top: 15px; }
+                    .divider { border-top: 1px solid #e5e7eb; margin: 30px 0; }
+                    .footer { background-color: #f1f5f9; padding: 20px; text-align: center; font-size: 12px; color: #64748b; }
+                    .list-item { margin-bottom: 8px; }
+                    a { color: #2563eb; text-decoration: none; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1>Zero Olympiad</h1>
+                    </div>
                     
-                    <p>By registering, you get the opportunity to complete a United Nations-recognized course from <strong>UNITAR</strong> and <strong>UN CC:Learn</strong>.</p>
-                    
-                    <div style="background-color: #f0f9ff; padding: 20px; border-radius: 8px; border: 1px solid #bae6fd; margin: 20px 0;">
-                        <p style="margin-top: 0; font-size: 14px; color: #0369a1;">Category: <strong>${courseDetails.categoryName}</strong></p>
-                        <hr style="border: 0; border-top: 1px solid #e0f2fe; margin: 10px 0;">
-                        <p style="margin-bottom: 5px;">Your Assigned Course:</p>
-                        <h3 style="color: #0284c7; margin: 0 0 10px 0;">${courseDetails.courseName}</h3>
-                        <a href="${courseDetails.courseLink}" target="_blank" style="display: inline-block; background-color: #0284c7; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;">Start Course Now</a>
+                    <div class="content">
+                        <div class="greeting">Dear ${name},</div>
+
+                        <p>Assalamu Alaikum. Thank you for registering for the Zero Olympiad.</p>
+                        <p>By registering for the Zero Olympiad, you are getting the opportunity to complete a United Nations-recognized course from the <strong>United Nations Institute for Training and Research (UNITAR)</strong> and the <strong>UN Climate Change Learning Partnership (UN CC:Learn)</strong>.</p>
+
+                        <div class="card">
+                            <p style="margin-top:0; color: #475569; font-size: 14px;"><strong>Your Category:</strong> ${courseDetails.categoryName}</p>
+                            <hr style="border: 0; border-top: 1px solid #cbd5e1; margin: 10px 0;">
+                            <p style="margin-bottom: 5px;"><strong>Your Assigned Course:</strong></p>
+                            <h2 style="color: #2563eb; margin: 0 0 10px 0; font-size: 22px;">${courseDetails.courseName}</h2>
+                            <p>You can complete this course online for free at your own convenience.</p>
+                            <center>
+                                <a href="${courseDetails.courseLink}" target="_blank" class="btn">Start Course Now</a>
+                            </center>
+                        </div>
+
+                        <p><strong>Important Information:</strong></p>
+                        <ul>
+                            <li class="list-item">Upon completion, you will receive a certificate directly from the United Nations institution.</li>
+                            <li class="list-item">The 30 MCQ questions for the first round of Zero Olympiad will be based on this course.</li>
+                            <li class="list-item"><strong>Exam Date:</strong> May 8.</li>
+                            <li class="list-item">No marks will be deducted for wrong answers.</li>
+                        </ul>
+                        <p>You can log in to the Zero Olympiad website using your email and password to participate in the exam.</p>
+
+                        <div class="divider"></div>
+
+                        <div class="greeting">প্রিয় শিক্ষার্থী,</div>
+                        <p>আসসালামু আলাইকুম। জিরো অলিম্পিয়াডে রেজিস্ট্রেশন করার জন্য আপনাকে ধন্যবাদ।</p>
+                        <p>Zero Olympiad এ রেজিস্ট্রেশন করায় আপনি পাচ্ছেন <strong>United Nations Institute for Training and Research (UNITAR)</strong> এবং <strong>UN Climate Change Learning Partnership (UN CC:Learn)</strong> থেকে জাতিসংঘ স্বীকৃত একটি কোর্স করার সুযোগ।</p>
+
+                        <div class="card">
+                            <p style="margin-top:0; font-size: 14px;">আপনি যেহেতু <strong>${courseDetails.categoryName}</strong> ক্যাটাগরিতে রেজিস্ট্রেশন করেছেন, তাই আপনার কোর্স হবে:</p>
+                            <h2 style="color: #2563eb; margin: 10px 0; font-size: 20px;">${courseDetails.courseName}</h2>
+                            <p>কোর্সের লিংকে ক্লিক করে এই কোর্সটি অনলাইনে বিনামূল্যে নিজের সুবিধামত সময়ে করা যাবে।</p>
+                            <center>
+                                <a href="${courseDetails.courseLink}" target="_blank" class="btn">কোর্স শুরু করতে ক্লিক করুন</a>
+                            </center>
+                        </div>
+
+                        <p><strong>গুরুত্বপূর্ণ তথ্য:</strong></p>
+                        <ul>
+                            <li class="list-item">কোর্স সম্পন্ন করার সাথে সাথে জাতিসংঘের এই প্রতিষ্ঠান থেকেই সার্টিফিকেট প্রদান করা হবে।</li>
+                            <li class="list-item">এই কোর্স থেকেই Zero Olympiad এর ১ম রাউন্ডের ৩০টি MCQ প্রশ্ন থাকবে।</li>
+                            <li class="list-item">পরবর্তী জীবনে বায়োডাটা বা সিভিতে এই কোর্স সম্পন্ন করার তথ্য উল্লেখ করলে তা আপনাকে অন্যদের থেকে এগিয়ে রাখবে।</li>
+                            <li class="list-item"><strong>পরীক্ষার তারিখ:</strong> ৮ মে।</li>
+                            <li class="list-item">৩০টি প্রশ্ন থাকবে (মোট ৩০ মার্ক)। ভুল উত্তরের জন্য কোন নম্বর কাটা যাবে না।</li>
+                        </ul>
+                        
+                        <p>জিরো অলিম্পিয়াডের ওয়েবসাইটে আপনার ইমেইল ও পাসওয়ার্ড দিয়ে লগইন করে ৮ মে দিনের যেকোন সময় পরীক্ষায় অংশগ্রহণ করতে পারবেন।</p>
+
+                        <br>
+                        <p style="margin-bottom: 0;">Best regards / শুভেচ্ছান্তে,</p>
+                        <p style="font-weight: bold; margin-top: 5px; color: #2563eb;">Zero Olympiad Team</p>
                     </div>
 
-                    <p><strong>Important Information:</strong></p>
-                    <ul style="color: #4b5563;">
-                        <li>The 30 MCQ questions for the first round will be based on this course.</li>
-                        <li>Exam Date: <strong>May 8</strong>.</li>
-                    </ul>
-                    
-                    <p style="margin-top: 30px; border-top: 1px solid #e5e7eb; padding-top: 20px;">Best regards,<br><strong>Zero Olympiad Team</strong></p>
+                    <div class="footer">
+                        <p>&copy; 2026 Zero Olympiad. All rights reserved.</p>
+                        <p><a href="#">Contact Us</a> | <a href="#">Website</a></p>
+                    </div>
                 </div>
-            </div>
+            </body>
+            </html>
         `,
     };
 
@@ -109,7 +168,7 @@ router.post('/register', async (req, res) => {
         // ============================================================
         // ✅ ROBUST LOGIC: Identify Role & Course (Partial Match)
         // ============================================================
-        
+
         let sdgRole = "General Member";
         let courseDetails = {};
         const trimmedGrade = gradeLevel ? gradeLevel.trim() : "";
@@ -117,19 +176,19 @@ router.post('/register', async (req, res) => {
 
         // --- GROUP 1 CHECK (Class 5-8) ---
         const isGroup1 = [
-            "Class 5", "Grade 5", "PYP 5", "Taysir", 
-            "Class 6", "Grade 6", "MYP 1", "Mizan", 
-            "Class 7", "Grade 7", "MYP 2", "Nahbameer", 
+            "Class 5", "Grade 5", "PYP 5", "Taysir",
+            "Class 6", "Grade 6", "MYP 1", "Mizan",
+            "Class 7", "Grade 7", "MYP 2", "Nahbameer",
             "Class 8", "Grade 8", "MYP 3", "Hedayatun"
         ].some(keyword => trimmedGrade.includes(keyword));
 
         // --- GROUP 2 CHECK (Class 9-12 & Admission) ---
         const isGroup2 = [
-            "Class 9", "Grade 9", "MYP 4", "Kafiya", 
-            "Class 10", "Grade 10", "MYP 5", 
-            "SSC", "O Level", 
-            "Class 11", "Grade 11", "DP 1", "Jalalayn", 
-            "Class 12", "Grade 12", "DP 2", 
+            "Class 9", "Grade 9", "MYP 4", "Kafiya",
+            "Class 10", "Grade 10", "MYP 5",
+            "SSC", "O Level",
+            "Class 11", "Grade 11", "DP 1", "Jalalayn",
+            "Class 12", "Grade 12", "DP 2",
             "HSC", "A Level"
         ].some(keyword => trimmedGrade.includes(keyword));
 
@@ -186,7 +245,7 @@ router.post('/register', async (req, res) => {
             grade_level: gradeLevel,
             current_level: (currentLevel && currentLevel !== "None of These") ? currentLevel : gradeLevel,
             promo_code: promoCode || null, // ✅ Promo Code Added
-            sdg_role: sdgRole, 
+            sdg_role: sdgRole,
             assigned_sdg_number: assignedSDGNumber,
             round_type: "initial round_1",
             role: "user"
@@ -199,7 +258,7 @@ router.post('/register', async (req, res) => {
 
         // ৬. পেমেন্ট টোকেন আপডেট (Used)
         await supabase.from('payment_verifications').update({ status: 'used' }).eq('verification_token', paymentToken);
-        
+
         // ৭. ইমেইল পাঠানো
         await sendWelcomeEmail(email, name, courseDetails);
 
