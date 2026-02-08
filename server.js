@@ -18,7 +18,7 @@ const PORT = process.env.PORT || 4000;
 const ALLOWED_ORIGINS = [
     'http://localhost:3000',     
     'https://z-o-frontend.vercel.app',
-    'https://zero.olympiad.faatihaaayat.com',
+    'https://zeroolympiad.faatihaaayat.com',
 ];
 
 const corsOptions = {

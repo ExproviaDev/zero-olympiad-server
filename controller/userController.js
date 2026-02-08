@@ -34,7 +34,6 @@ const addMember = async (req, res) => {
           grade_level: "N/A",
           current_level: "N/A",
           sdg_role: "Volunteer",
-          activities_role: "Staff",
           assigned_sdg_number: 0,
           round_type: "staff_entry",
           is_blocked: false
