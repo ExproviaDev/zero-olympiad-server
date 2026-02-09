@@ -165,14 +165,14 @@ exports.createPayment = async (req, res) => {
         // 📄 PDF LOG: Create Payment Request
         console.log("\n--- [PDF] Create Payment Request ---");
         console.log(JSON.stringify({
-            mode: '0011', payerReference: "User_Registration", callbackURL: process.env.BKASH_CALLBACK_URL, amount: amount ? amount.toString() : "300", currency: "BDT", intent: "sale", merchantInvoiceNumber: merchantInvoiceNumber
+            mode: '0011', payerReference: "User_Registration", callbackURL: process.env.BKASH_CALLBACK_URL, amount: amount ? amount.toString() : "10", currency: "BDT", intent: "sale", merchantInvoiceNumber: merchantInvoiceNumber
         }, null, 2));
 
         const { data } = await bkashAxios.post(`${process.env.BKASH_BASE_URL}/tokenized-checkout/payment/create`, {
             mode: '0011',
             payerReference: "User_Registration",
             callbackURL: process.env.BKASH_CALLBACK_URL,
-            amount: amount ? amount.toString() : "05",
+            amount: amount ? amount.toString() : "10",
             currency: "BDT",
             intent: "sale",
             merchantInvoiceNumber: merchantInvoiceNumber
