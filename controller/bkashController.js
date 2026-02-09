@@ -172,7 +172,7 @@ exports.createPayment = async (req, res) => {
             mode: '0011',
             payerReference: "User_Registration",
             callbackURL: process.env.BKASH_CALLBACK_URL,
-            amount: amount ? amount.toString() : "300",
+            amount: amount ? amount.toString() : "05",
             currency: "BDT",
             intent: "sale",
             merchantInvoiceNumber: merchantInvoiceNumber
