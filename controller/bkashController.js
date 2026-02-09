@@ -84,79 +84,16 @@ const getBkashErrorMessage = (code) => {
     return errors[code] || null;
 };
 
-// --- Auth Headers Handler (Fixed Race Condition) ---
-// const getAuthHeaders = async () => {
-//     try {
-//         const { BKASH_USERNAME, BKASH_PASSWORD, BKASH_APP_KEY, BKASH_APP_SECRET, BKASH_BASE_URL } = process.env;
-
-//         if (!BKASH_USERNAME || !BKASH_PASSWORD) {
-//             console.error("Critical Error: bKash Credentials missing in .env");
-//             return null;
-//         }
-
-//         const { data: tokenData } = await supabase.from('bkash_tokens').select('*').eq('id', 1).maybeSingle();
-
-//         let token;
-//         const currentTime = new Date();
-//         // ৩০০০ সেকেন্ড (৫০ মিনিট) এর বেশি হলে টোকেন রিনিউ করবে
-//         const isExpired = !tokenData || !tokenData.updated_at || (currentTime - new Date(tokenData.updated_at) > 3000 * 1000);
-
-//         if (isExpired) {
-//             console.log("Fetching new bKash Token...");
-
-//             const response = await bkashAxios.post(`${BKASH_BASE_URL}/tokenized-checkout/auth/grant-token`, {
-//                 app_key: BKASH_APP_KEY,
-//                 app_secret: BKASH_APP_SECRET
-//             }, {
-//                 headers: {
-//                     "Content-Type": "application/json",
-//                     "Accept": "application/json",
-//                     "username": BKASH_USERNAME,
-//                     "password": BKASH_PASSWORD
-//                 }
-//             });
-
-//             token = response.data.auth_token;
-
-//             await supabase.from('bkash_tokens').upsert({
-//                 id: 1,
-//                 auth_token: token,
-//                 updated_at: new Date().toISOString()
-//             });
-//             console.log("Token Generated Successfully");
-//         } else {
-//             token = tokenData.auth_token;
-//             // console.log("Using Cached Token");
-//         }
-
-//         return {
-//             'Authorization': token,
-//             'X-App-Key': BKASH_APP_KEY,
-//             'Accept': 'application/json',
-//             'Content-Type': 'application/json'
-//         };
-//     } catch (error) {
-//         console.error("bKash Auth Error Details:", error.response ? error.response.data : error.message);
-//         return null;
-//     }
-// };
-
+// --- Auth Headers Handler ---
 const getAuthHeaders = async () => {
     try {
-        const {
-            BKASH_USERNAME,
-            BKASH_PASSWORD,
-            BKASH_APP_KEY,
-            BKASH_APP_SECRET,
-            BKASH_BASE_URL
-        } = process.env;
+        const { BKASH_USERNAME, BKASH_PASSWORD, BKASH_APP_KEY, BKASH_APP_SECRET, BKASH_BASE_URL } = process.env;
 
         if (!BKASH_USERNAME || !BKASH_PASSWORD || !BKASH_APP_KEY || !BKASH_APP_SECRET) {
             console.error("Critical Error: bKash credentials missing in .env");
             return null;
         }
 
-        // 🔹 Get stored token
         const { data: tokenData } = await supabase
             .from('bkash_tokens')
             .select('auth_token, updated_at')
@@ -165,25 +102,16 @@ const getAuthHeaders = async () => {
 
         let token;
         const now = Date.now();
-
-        // 🔹 Token validity: 55 minutes (bKash safe window)
         const TOKEN_VALIDITY_MS = 55 * 60 * 1000;
 
-        const isExpired =
-            !tokenData ||
-            !tokenData.auth_token ||
-            !tokenData.updated_at ||
-            now - new Date(tokenData.updated_at).getTime() > TOKEN_VALIDITY_MS;
+        const isExpired = !tokenData || !tokenData.auth_token || !tokenData.updated_at || now - new Date(tokenData.updated_at).getTime() > TOKEN_VALIDITY_MS;
 
         if (isExpired) {
             console.log("Fetching new bKash Token...");
 
             const response = await bkashAxios.post(
                 `${BKASH_BASE_URL}/tokenized-checkout/auth/grant-token`,
-                {
-                    app_key: BKASH_APP_KEY,
-                    app_secret: BKASH_APP_SECRET
-                },
+                { app_key: BKASH_APP_KEY, app_secret: BKASH_APP_SECRET },
                 {
                     headers: {
                         "Content-Type": "application/json",
@@ -194,7 +122,10 @@ const getAuthHeaders = async () => {
                 }
             );
 
-            // 🔥 IMPORTANT: bKash returns id_token
+            // 📄 PDF LOG: Grant Token Response
+            console.log("\n--- [PDF] Grant Token Response ---");
+            console.log(JSON.stringify(response.data, null, 2));
+
             token = response.data.id_token;
 
             await supabase.from('bkash_tokens').upsert({
@@ -206,7 +137,6 @@ const getAuthHeaders = async () => {
             console.log("bKash Token Generated & Cached");
         } else {
             token = tokenData.auth_token;
-            // console.log("Using cached bKash token");
         }
 
         return {
@@ -216,10 +146,7 @@ const getAuthHeaders = async () => {
             "Content-Type": "application/json"
         };
     } catch (error) {
-        console.error(
-            "bKash Auth Error:",
-            error.response?.data || error.message
-        );
+        console.error("bKash Auth Error:", error.response?.data || error.message);
         return null;
     }
 };
@@ -235,6 +162,12 @@ exports.createPayment = async (req, res) => {
 
         const merchantInvoiceNumber = "Inv_" + crypto.randomUUID().substring(0, 8);
 
+        // 📄 PDF LOG: Create Payment Request
+        console.log("\n--- [PDF] Create Payment Request ---");
+        console.log(JSON.stringify({
+            mode: '0011', payerReference: "User_Registration", callbackURL: process.env.BKASH_CALLBACK_URL, amount: amount ? amount.toString() : "300", currency: "BDT", intent: "sale", merchantInvoiceNumber: merchantInvoiceNumber
+        }, null, 2));
+
         const { data } = await bkashAxios.post(`${process.env.BKASH_BASE_URL}/tokenized-checkout/payment/create`, {
             mode: '0011',
             payerReference: "User_Registration",
@@ -244,6 +177,10 @@ exports.createPayment = async (req, res) => {
             intent: "sale",
             merchantInvoiceNumber: merchantInvoiceNumber
         }, { headers });
+
+        // 📄 PDF LOG: Create Payment Response
+        console.log("\n--- [PDF] Create Payment Response ---");
+        console.log(JSON.stringify(data, null, 2));
 
         if (data.errorMessageEn || (data.statusCode && data.statusCode !== '0000')) {
             const code = data.statusCode || data.errorCode;
@@ -271,124 +208,94 @@ exports.createPayment = async (req, res) => {
 exports.bkashCallback = async (req, res) => {
     try {
         const { paymentID, status } = req.query;
-
-        if (!paymentID || !status) {
-            return res.redirect(
-                `${process.env.FRONTEND_URL}/payment-failed?message=Invalid Callback Data`
-            );
-        }
+        if (!paymentID || !status) return res.redirect(`${process.env.FRONTEND_URL}/payment-failed?message=Invalid Callback`);
 
         const cleanPaymentID = String(paymentID).trim();
         const now = new Date();
-
         let errorMessage = "Payment Failed";
         let invoiceNumber = `INV-${Date.now()}`;
         let transactionTime = now.toISOString();
 
-        // 🔐 Auth header
         const headers = await getAuthHeaders();
-        if (!headers) {
-            return res.redirect(
-                `${process.env.FRONTEND_URL}/payment-failed?message=Authentication Failed`
-            );
-        }
+        if (!headers) return res.redirect(`${process.env.FRONTEND_URL}/payment-failed?message=Auth Failed`);
 
-        /* ======================================================
-           1️⃣ CANCEL CASE (NO QUERY API)
-        ====================================================== */
+        // 1️⃣ CANCEL CASE
         if (status === 'cancel') {
             errorMessage = "Payment Cancelled";
 
+            // 📄 PDF LOG: Query call just for logs (optional but helpful for PDF)
+            try {
+                const { data: cancelQuery } = await bkashAxios.post(
+                    `${process.env.BKASH_BASE_URL}/tokenized-checkout/payment/query`,
+                    { paymentId: cleanPaymentID }, { headers }
+                );
+                console.log("\n--- [PDF] Query Payment Response (Cancel Case) ---");
+                console.log(JSON.stringify(cancelQuery, null, 2));
+            } catch (e) { console.log("Cancel Log Query Skipped"); }
+
             await supabase.from('payment_logs').insert({
-                payment_id: cleanPaymentID,
-                invoice: invoiceNumber,
-                status: 'cancelled',
-                message: errorMessage,
-                created_at: transactionTime
+                payment_id: cleanPaymentID, invoice: invoiceNumber, status: 'cancelled', message: errorMessage, created_at: transactionTime
             });
 
-            return res.redirect(
-                `${process.env.FRONTEND_URL}/payment-failed?message=${encodeURIComponent(
-                    errorMessage
-                )}&invoice=${invoiceNumber}`
-            );
+            return res.redirect(`${process.env.FRONTEND_URL}/payment-failed?message=${encodeURIComponent(errorMessage)}&invoice=${invoiceNumber}`);
         }
 
-        /* ======================================================
-           2️⃣ FAILURE CASE (QUERY ONCE, 403 SAFE)
-        ====================================================== */
+        // 2️⃣ FAILURE CASE
         if (status === 'failure') {
             try {
                 const { data } = await bkashAxios.post(
                     `${process.env.BKASH_BASE_URL}/tokenized-checkout/payment/query`,
-                    { paymentId: cleanPaymentID },
-                    { headers }
+                    { paymentId: cleanPaymentID }, { headers }
                 );
+
+                // 📄 PDF LOG: Query Payment Response
+                console.log("\n--- [PDF] Query Payment Response (Failure Case) ---");
+                console.log(JSON.stringify(data, null, 2));
 
                 if (data) {
                     invoiceNumber = data.merchantInvoiceNumber || invoiceNumber;
                     transactionTime = data.paymentCreateTime || transactionTime;
-
                     const code = data.statusCode || data.errorCode;
-                    errorMessage =
-                        getBkashErrorMessage(code) ||
-                        data.errorMessageEn ||
-                        data.statusMessage ||
-                        "Payment Failed";
+                    errorMessage = getBkashErrorMessage(code) || data.errorMessageEn || data.statusMessage || "Payment Failed";
                 }
             } catch (err) {
-                // 403 is EXPECTED in failure state
                 errorMessage = "Payment Failed";
             }
 
             await supabase.from('payment_logs').insert({
-                payment_id: cleanPaymentID,
-                invoice: invoiceNumber,
-                status: 'failed',
-                message: errorMessage,
-                created_at: transactionTime
+                payment_id: cleanPaymentID, invoice: invoiceNumber, status: 'failed', message: errorMessage, created_at: transactionTime
             });
 
-            return res.redirect(
-                `${process.env.FRONTEND_URL}/payment-failed?message=${encodeURIComponent(
-                    errorMessage
-                )}&invoice=${invoiceNumber}`
-            );
+            return res.redirect(`${process.env.FRONTEND_URL}/payment-failed?message=${encodeURIComponent(errorMessage)}&invoice=${invoiceNumber}`);
         }
 
-        /* ======================================================
-           3️⃣ SUCCESS CASE (EXECUTE → QUERY FALLBACK)
-        ====================================================== */
+        // 3️⃣ SUCCESS CASE
         if (status === 'success') {
             let paymentData;
-
             try {
                 const { data } = await bkashAxios.post(
                     `${process.env.BKASH_BASE_URL}/tokenized-checkout/payment/execute`,
-                    { paymentId: cleanPaymentID },
-                    { headers }
+                    { paymentId: cleanPaymentID }, { headers }
                 );
                 paymentData = data;
+
+                // 📄 PDF LOG: Execute Payment Response
+                console.log("\n--- [PDF] Execute Payment Response ---");
+                console.log(JSON.stringify(paymentData, null, 2));
+
             } catch (execErr) {
                 try {
                     const { data } = await bkashAxios.post(
                         `${process.env.BKASH_BASE_URL}/tokenized-checkout/payment/query`,
-                        { paymentId: cleanPaymentID },
-                        { headers }
+                        { paymentId: cleanPaymentID }, { headers }
                     );
                     paymentData = data;
                 } catch {
-                    return res.redirect(
-                        `${process.env.FRONTEND_URL}/payment-failed?message=Payment Verification Failed`
-                    );
+                    return res.redirect(`${process.env.FRONTEND_URL}/payment-failed?message=Payment Verification Failed`);
                 }
             }
 
-            if (
-                paymentData &&
-                (paymentData.statusCode === '0000' ||
-                    paymentData.transactionStatus === 'Completed')
-            ) {
+            if (paymentData && (paymentData.statusCode === '0000' || paymentData.transactionStatus === 'Completed')) {
                 const trxId = paymentData.trxID || paymentData.trxId;
                 const verificationToken = crypto.randomUUID();
 
@@ -398,62 +305,41 @@ exports.bkashCallback = async (req, res) => {
                     amount: parseFloat(paymentData.amount || 0),
                     verification_token: verificationToken,
                     status: 'completed',
-                    customer_number:
-                        paymentData.customerMsisdn || paymentData.payerAccount
+                    customer_number: paymentData.customerMsisdn || paymentData.payerAccount
                 });
 
-                return res.redirect(
-                    `${process.env.FRONTEND_URL}/registration?step=3&token=${verificationToken}`
-                );
+                return res.redirect(`${process.env.FRONTEND_URL}/registration?step=3&token=${verificationToken}`);
+            } else {
+                const code = paymentData?.statusCode || paymentData?.errorCode;
+                errorMessage = getBkashErrorMessage(code) || paymentData?.errorMessageEn || "Payment Processing Failed";
+                invoiceNumber = paymentData?.merchantInvoiceNumber || invoiceNumber;
+
+                await supabase.from('payment_logs').insert({
+                    payment_id: cleanPaymentID, invoice: invoiceNumber, status: 'failed', message: errorMessage, created_at: transactionTime
+                });
+
+                return res.redirect(`${process.env.FRONTEND_URL}/payment-failed?message=${encodeURIComponent(errorMessage)}&invoice=${invoiceNumber}`);
             }
-
-            // Success callback but execution failed
-            const code = paymentData?.statusCode || paymentData?.errorCode;
-            errorMessage =
-                getBkashErrorMessage(code) ||
-                paymentData?.errorMessageEn ||
-                "Payment Processing Failed";
-
-            invoiceNumber =
-                paymentData?.merchantInvoiceNumber || invoiceNumber;
-
-            await supabase.from('payment_logs').insert({
-                payment_id: cleanPaymentID,
-                invoice: invoiceNumber,
-                status: 'failed',
-                message: errorMessage,
-                created_at: transactionTime
-            });
-
-            return res.redirect(
-                `${process.env.FRONTEND_URL}/payment-failed?message=${encodeURIComponent(
-                    errorMessage
-                )}&invoice=${invoiceNumber}`
-            );
         }
 
-        /* ======================================================
-           4️⃣ UNKNOWN STATUS
-        ====================================================== */
-        return res.redirect(
-            `${process.env.FRONTEND_URL}/payment-failed?message=Unknown Payment Status`
-        );
+        return res.redirect(`${process.env.FRONTEND_URL}/payment-failed?message=Unknown Payment Status`);
     } catch (error) {
-        console.error("Callback System Error:", error.message);
-        return res.redirect(
-            `${process.env.FRONTEND_URL}/payment-failed?message=Server Internal Error`
-        );
+        console.error("Callback Error:", error.message);
+        return res.redirect(`${process.env.FRONTEND_URL}/payment-failed?message=Server Error`);
     }
 };
 
-
-
-// ... Query, Search, Refund API functions remain same as before ...
+// --- Query & Search APIs (With PDF Logs) ---
 exports.queryPayment = async (req, res) => {
     try {
         const { paymentID } = req.params;
         const headers = await getAuthHeaders();
         const { data } = await bkashAxios.post(`${process.env.BKASH_BASE_URL}/tokenized-checkout/query/payment`, { paymentId: paymentID }, { headers });
+
+        // 📄 PDF LOG
+        console.log("\n--- [PDF] Query Payment Response ---");
+        console.log(JSON.stringify(data, null, 2));
+
         res.status(200).json(data);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -465,31 +351,27 @@ exports.searchTransaction = async (req, res) => {
         const { trxID } = req.params;
         const headers = await getAuthHeaders();
         const { data } = await bkashAxios.post(`${process.env.BKASH_BASE_URL}/tokenized-checkout/general/search-transaction`, { trxId: trxID }, { headers });
+
+        // 📄 PDF LOG
+        console.log("\n--- [PDF] Search Transaction Response ---");
+        console.log(JSON.stringify(data, null, 2));
+
         res.status(200).json(data);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 };
-// ... Refund API remains same ...
 
 // --- Refund API ---
 exports.refundTransaction = async (req, res) => {
     try {
         const { paymentId, amount, trxId, reason } = req.body;
         const headers = await getAuthHeaders();
-
         const { data } = await bkashAxios.post(
             `${process.env.BKASH_BASE_URL}/tokenized-checkout/refund/payment/transaction`,
-            {
-                paymentId: paymentId,
-                refundAmount: amount,
-                trxId: trxId,
-                sku: "payment",
-                reason: reason || "System refund"
-            },
+            { paymentId: paymentId, refundAmount: amount, trxId: trxId, sku: "payment", reason: reason || "System refund" },
             { headers }
         );
-
         res.status(200).json(data);
     } catch (error) {
         res.status(500).json({ error: error.message });
