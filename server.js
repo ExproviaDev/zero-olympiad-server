@@ -34,8 +34,7 @@ const corsOptions = {
     optionsSuccessStatus: 200
 };
 
-app.use(cors(corsOptions)); 
-app.options(/.*/, cors(corsOptions));
+app.use(cors(corsOptions));
 app.use(express.json());
 
 app.use('/api/user', registrationRouter); 
@@ -55,7 +54,7 @@ app.get("/", async (req, res)=>{
     res.send(x);
 })
 
-// app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
 
 module.exports = app
