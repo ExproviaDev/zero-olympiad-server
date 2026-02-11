@@ -19,18 +19,23 @@ const ALLOWED_ORIGINS = [
     'http://localhost:3000',     
     'https://z-o-frontend.vercel.app',
     'https://zeroolympiad.faatihaaayat.com',
-    "https://zeroolympiad.faatihaaayat.com/*",
 ];
-
 const corsOptions = {
-    origin: ALLOWED_ORIGINS, 
+    origin: (origin, callback) => {
+        if (ALLOWED_ORIGINS.indexOf(origin) !== -1 || !origin) {
+            callback(null, true);
+        } else {
+            console.log("Blocked by CORS:", origin);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
-    optionsSuccessStatus: 204
+    optionsSuccessStatus: 200
 };
 
 app.use(cors(corsOptions)); 
-
+app.options('*', cors(corsOptions));
 app.use(express.json());
 
 app.use('/api/user', registrationRouter); 
