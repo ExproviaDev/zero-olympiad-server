@@ -225,6 +225,15 @@ const submitQuiz = async (req, res) => {
 
         if (perfError) throw perfError;
 
+        // 🔥 ৫. ইউজার প্রোফাইলে PARTICIPATION স্ট্যাটাস আপডেট করা
+        // এই অপারেশনটিই ইউজারের জন্য সার্টিফিকেট আনলক করবে
+        const { error: profileError } = await supabase
+            .from('user_profiles')
+            .update({ is_participated: true }) // স্ট্যাটাস TRUE করে দেওয়া হলো
+            .eq('user_id', user_id);
+
+        if (profileError) throw profileError;
+
         res.status(201).json({
             success: true,
             message: "Quiz submitted and synced with leaderboard!",

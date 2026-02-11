@@ -147,7 +147,7 @@ const calculateAssignedSDG = (gradeLevel, currentLevel) => {
 router.post('/register', async (req, res) => {
     const {
         email, password, name, phone, district, institution,
-        educationType, gradeLevel, currentLevel, promoCode, paymentToken
+        educationType, gradeLevel, currentLevel, promoCode, paymentToken, role, myPromoCode,
     } = req.body;
 
     try {
@@ -248,10 +248,41 @@ router.post('/register', async (req, res) => {
             sdg_role: sdgRole,
             assigned_sdg_number: assignedSDGNumber,
             round_type: "initial round_1",
-            role: "user"
+            role: role || "user"
         }]);
 
         if (profileError) throw profileError;
+        // ============================================================
+        // 🔥 NEW INTEGRATION: AMBASSADOR & REFERRAL LOGIC
+        // ============================================================
+
+        // ক. ইউজার যদি অ্যাম্বাসেডর হিসেবে জয়েন করে
+        if (role === 'ambassador' && myPromoCode) {
+            await supabase.from('ambassador_profiles').insert([{
+                user_id: newUserId,
+                promo_code: myPromoCode.toUpperCase(),
+                total_referrals: 0
+            }]);
+        }
+
+        // খ. যদি কোনো কনটেস্টর অন্য কারো প্রোমো কোড ব্যবহার করে থাকে
+        if (promoCode) {
+            // ওই প্রোমো কোডটি কোন অ্যাম্বাসেডরের তা খুঁজে বের করা
+            const { data: ambassadorData } = await supabase
+                .from('ambassador_profiles')
+                .select('id, total_referrals')
+                .eq('promo_code', promoCode.toUpperCase())
+                .single();
+
+            if (ambassadorData) {
+                // অ্যাম্বাসেডরের রেফারাল সংখ্যা ১ বাড়ানো
+                await supabase
+                    .from('ambassador_profiles')
+                    .update({ total_referrals: (ambassadorData.total_referrals || 0) + 1 })
+                    .eq('id', ambassadorData.id);
+            }
+        }
+        // ============================================================
 
         // ৫. রাউন্ড ১ এন্ট্রি
         await supabase.from('round_1_initial').insert([{ user_id: newUserId, quiz_score: 0, is_qualified: false }]);
