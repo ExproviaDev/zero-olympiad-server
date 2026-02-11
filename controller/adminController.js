@@ -17,10 +17,13 @@ const getCompetitionSettings = async (req, res) => {
 };
 
 // ২. কম্পিটিশন সেটিংস আপডেট করা
+// adminController.js
+
 const updateCompetitionSettings = async (req, res) => {
     try {
         const {
             current_active_round,
+            is_leaderboard_public, // 🔥 নতুন ফিল্ড
             round_1_start, round_1_end, round_1_has_quiz, round_1_has_video,
             round_2_start, round_2_end, round_2_has_quiz, round_2_has_video,
             round_3_start, round_3_end, round_3_has_quiz, round_3_has_video
@@ -30,6 +33,7 @@ const updateCompetitionSettings = async (req, res) => {
             .from('competition_settings')
             .update({
                 current_active_round,
+                is_leaderboard_public, // 🔥 আপডেট লজিক
                 round_1_start, round_1_end, round_1_has_quiz, round_1_has_video,
                 round_2_start, round_2_end, round_2_has_quiz, round_2_has_video,
                 round_3_start, round_3_end, round_3_has_quiz, round_3_has_video,
@@ -39,11 +43,7 @@ const updateCompetitionSettings = async (req, res) => {
 
         if (error) throw error;
 
-        res.status(200).json({
-            success: true,
-            message: "সব রাউন্ডের সেটিংস সফলভাবে আপডেট হয়েছে।",
-            data
-        });
+        res.status(200).json({ success: true, message: "Settings Updated", data });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }
@@ -54,9 +54,13 @@ const getRound2Submissions = async (req, res) => {
     try {
         const { sdg_number, status, page = 1, limit = 10 } = req.query;
 
-        // Pagination Logic
-        const from = (page - 1) * limit;
-        const to = from + limit - 1;
+        // 🔥 FIX: String থেকে Integer এ কনভার্ট করা
+        const pageInt = parseInt(page);
+        const limitInt = parseInt(limit);
+
+        // Pagination Logic (এখন যোগফল সঠিক হবে)
+        const from = (pageInt - 1) * limitInt;
+        const to = from + limitInt - 1;
 
         let query = supabase
             .from('round_2_selection')

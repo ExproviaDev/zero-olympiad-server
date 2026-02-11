@@ -1,10 +1,10 @@
 const express = require('express');
-const { verifyToken, verifyAdmin } = require('../middleware/authMiddleware');
+const { verifyToken, verifyAdmin } = require('../middleware/authMiddleware'); // Admin middleware জরুরি
 const { 
     submitVideoLink,
     updateJudgeScore,
     getLeaderboard,
-    setPassMarkAndPromote 
+    promoteUsersByRanking 
 } = require('../controller/markController');
 
 const router = express.Router();
@@ -12,6 +12,8 @@ const router = express.Router();
 router.get('/view', verifyToken, getLeaderboard);
 router.post('/submit-video', verifyToken, submitVideoLink);
 router.patch('/judge-score', verifyToken, verifyAdmin, updateJudgeScore);
-router.post('/set-pass-mark', verifyToken, verifyAdmin, setPassMarkAndPromote);
+
+// 🔥 Updated Route
+router.post('/promote-users', verifyToken, verifyAdmin, promoteUsersByRanking);
 
 module.exports = router;
