@@ -19,6 +19,7 @@ const ALLOWED_ORIGINS = [
     'http://localhost:3000',     
     'https://z-o-frontend.vercel.app',
     'https://zeroolympiad.faatihaaayat.com',
+    "https://zeroolympiad.faatihaaayat.com/*",
 ];
 
 const corsOptions = {
