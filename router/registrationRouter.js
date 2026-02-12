@@ -112,42 +112,69 @@ const sendWelcomeEmail = async (email, name, courseDetails) => {
     }
 };
 
-// --- SDG Number ক্যালকুলেশন হেল্পার ---
-const calculateAssignedSDG = (gradeLevel, currentLevel) => {
-    const grade = gradeLevel ? gradeLevel.trim() : "";
-    const current = currentLevel ? currentLevel.trim() : "";
+// // --- SDG Number ক্যালকুলেশন হেল্পার ---
+// const calculateAssignedSDG = (gradeLevel, currentLevel) => {
+//     const grade = gradeLevel ? gradeLevel.trim() : "";
+//     const current = currentLevel ? currentLevel.trim() : "";
 
-    // SDG 1-4 (Class 5 to 8)
-    if (grade.includes("Class 5") || grade.includes("Grade 5") || grade.includes("PYP 5")) return 1;
-    if (grade.includes("Class 6") || grade.includes("Grade 6") || grade.includes("MYP 1")) return 2;
-    if (grade.includes("Class 7") || grade.includes("Grade 7") || grade.includes("MYP 2")) return 3;
-    if (grade.includes("Class 8") || grade.includes("Grade 8") || grade.includes("MYP 3")) return 4;
+//     // SDG 1-4 (Class 5 to 8)
+//     if (grade.includes("Class 5") || grade.includes("Grade 5") || grade.includes("PYP 5")) return 1;
+//     if (grade.includes("Class 6") || grade.includes("Grade 6") || grade.includes("MYP 1")) return 2;
+//     if (grade.includes("Class 7") || grade.includes("Grade 7") || grade.includes("MYP 2")) return 3;
+//     if (grade.includes("Class 8") || grade.includes("Grade 8") || grade.includes("MYP 3")) return 4;
 
-    // SDG 5-10 (Class 9 to 12)
-    if (grade.includes("Class 9") || grade.includes("Grade 9") || grade.includes("MYP 4")) return 5;
-    if (grade.includes("Class 10") || grade.includes("Grade 10") || grade.includes("MYP 5")) return 6;
-    if (grade.includes("SSC") || grade.includes("O Level")) return 7;
-    if (grade.includes("Class 11") || grade.includes("Grade 11") || grade.includes("DP 1")) return 8;
-    if (grade.includes("Class 12") || grade.includes("Grade 12") || grade.includes("DP 2")) return 9;
-    if (grade.includes("HSC") || grade.includes("A Level")) return 10;
+//     // SDG 5-10 (Class 9 to 12)
+//     if (grade.includes("Class 9") || grade.includes("Grade 9") || grade.includes("MYP 4")) return 5;
+//     if (grade.includes("Class 10") || grade.includes("Grade 10") || grade.includes("MYP 5")) return 6;
+//     if (grade.includes("SSC") || grade.includes("O Level")) return 7;
+//     if (grade.includes("Class 11") || grade.includes("Grade 11") || grade.includes("DP 1")) return 8;
+//     if (grade.includes("Class 12") || grade.includes("Grade 12") || grade.includes("DP 2")) return 9;
+//     if (grade.includes("HSC") || grade.includes("A Level")) return 10;
 
-    // SDG 11-16 (Higher Ed)
-    if (current.includes("1st Year") || current.includes("Diploma")) return 11;
-    if (current.includes("2nd Year")) return 12;
-    if (current.includes("3rd Year")) return 13;
-    if (current.includes("4th Year")) return 14;
-    if (current.includes("5th Year") || current.includes("Internship")) return 15;
-    if (current.includes("Postgraduate") || current.includes("Kamil") || current.includes("Dawrah")) return 16;
+//     // SDG 11-16 (Higher Ed)
+//     if (current.includes("1st Year") || current.includes("Diploma")) return 11;
+//     if (current.includes("2nd Year")) return 12;
+//     if (current.includes("3rd Year")) return 13;
+//     if (current.includes("4th Year")) return 14;
+//     if (current.includes("5th Year") || current.includes("Internship")) return 15;
+//     if (current.includes("Postgraduate") || current.includes("Kamil") || current.includes("Dawrah")) return 16;
 
-    return 0; // Default
+//     return 0; // Default
+// };
+
+// --- SDG Number ক্যালকুলেশন হেল্পার (Diploma সহ ১৭টি SDG) ---
+const calculateAssignedSDG = (level) => {
+    const l = level ? level.trim() : "";
+
+    if (l.includes("Class 5") || l.includes("Taisir")) return 1;
+    if (l.includes("Class 6") || l.includes("Mizan")) return 2;
+    if (l.includes("Class 7") || l.includes("Nahbemir")) return 3;
+    if (l.includes("Class 8") || l.includes("Hidayatunnah")) return 4;
+    if (l.includes("Class 9") || l.includes("Kafiya & Bekaya")) return 5;
+    if (l.includes("Class 10")) return 6;
+    if (l.includes("SSC") || l.includes("Dakhil Candidate")) return 7;
+    if (l.includes("Class 11") || l.includes("Jalalayn")) return 8;
+    if (l.includes("Class 12")) return 9;
+    if (l.includes("HSC") || l.includes("Alim Candidate")) return 10;
+    if (l.includes("Admission Candidate") || l.includes("Musannif")) return 11;
+
+    // 🔥 University ও Diploma এর জন্য ম্যাপিং
+    if (l.includes("1st Year") || l.includes("Fazil") || l.includes("Mishkat")) return 12;
+    if (l.includes("2nd Year")) return 13;
+    if (l.includes("3rd Year")) return 14;
+    if (l.includes("4th Year")) return 15;
+
+    if (l.includes("5th Year") || l.includes("Kamil") || l.includes("Dawrah")) return 16;
+    if (l.includes("Postgraduate")) return 17;
+
+    return 0;
 };
-
 // --- ROUTES ---
 
 router.post('/register', async (req, res) => {
     const {
         email, password, name, phone, district, institution,
-        educationType, gradeLevel, currentLevel, promoCode, paymentToken, role, myPromoCode, 
+        educationType, gradeLevel, promoCode, paymentToken, role, myPromoCode,
     } = req.body;
 
     try {
@@ -164,64 +191,38 @@ router.post('/register', async (req, res) => {
                 message: "Payment verification failed. Please complete payment first."
             });
         }
-
-        // ============================================================
-        // ✅ ROBUST LOGIC: Identify Role & Course (Partial Match)
-        // ============================================================
+        // SDG Number ক্যালকুলেশন (ইউনিফাইড ড্রপডাউন থেকে আসা gradeLevel ব্যবহার করে)
+        const assignedSDGNumber = calculateAssignedSDG(gradeLevel);
 
         let sdgRole = "General Member";
         let courseDetails = {};
-        const trimmedGrade = gradeLevel ? gradeLevel.trim() : "";
-        const trimmedCurrent = currentLevel ? currentLevel.trim() : "";
 
-        // --- GROUP 1 CHECK (Class 5-8) ---
-        const isGroup1 = [
-            "Class 5", "Grade 5", "PYP 5", "Taysir",
-            "Class 6", "Grade 6", "MYP 1", "Mizan",
-            "Class 7", "Grade 7", "MYP 2", "Nahbameer",
-            "Class 8", "Grade 8", "MYP 3", "Hedayatun"
-        ].some(keyword => trimmedGrade.includes(keyword));
-
-        // --- GROUP 2 CHECK (Class 9-12 & Admission) ---
-        const isGroup2 = [
-            "Class 9", "Grade 9", "MYP 4", "Kafiya",
-            "Class 10", "Grade 10", "MYP 5",
-            "SSC", "O Level",
-            "Class 11", "Grade 11", "DP 1", "Jalalayn",
-            "Class 12", "Grade 12", "DP 2",
-            "HSC", "A Level"
-        ].some(keyword => trimmedGrade.includes(keyword));
-
-        if (isGroup1) {
-            // CASE 1: Class 5 to 8
+        // আপনার দেয়া টেবিল অনুযায়ী ১৭টি SDG এর ম্যাপিং
+        if (assignedSDGNumber >= 1 && assignedSDGNumber <= 4) {
+            // SDG 1-4: Activist
             sdgRole = "SDG Activist";
             courseDetails = {
                 categoryName: "Class 5 to Class 8 (or equivalent)",
                 courseName: "Sport For Climate Action",
                 courseLink: "https://unccelearn.org/course/view.php?id=215&page=overview"
             };
-        } else if (isGroup2) {
-            // CASE 2: Class 9 to Admission
+        } else if (assignedSDGNumber >= 5 && assignedSDGNumber <= 11) {
+            // SDG 5-11: Ambassador
             sdgRole = "SDG Ambassador";
             courseDetails = {
                 categoryName: "Class 9 to University Admission Candidate (or equivalent)",
                 courseName: "Becoming A Climate Champion",
                 courseLink: "https://unccelearn.org/course/view.php?id=201&page=overview"
             };
-        } else {
-            // CASE 3: University / Default
-            if (trimmedCurrent && trimmedCurrent !== "None of These" && trimmedCurrent !== "N/A") {
-                sdgRole = "SDG Achiever";
-            }
+        } else if (assignedSDGNumber >= 12 && assignedSDGNumber <= 17) {
+            // SDG 12-17: Achiever
+            sdgRole = "SDG Achiever";
             courseDetails = {
-                categoryName: "Bachelor 1st Year to Masters (or equivalent)",
+                categoryName: "University & Diploma (or equivalent)",
                 courseName: "Scaling Climate Finance",
                 courseLink: "https://unccelearn.org/course/view.php?id=205&page=overview"
             };
         }
-
-        // SDG Number ক্যালকুলেশন
-        const assignedSDGNumber = calculateAssignedSDG(gradeLevel, currentLevel);
 
         // ============================================================
 
@@ -243,7 +244,7 @@ router.post('/register', async (req, res) => {
             name, email, phone, district, institution,
             education_type: educationType,
             grade_level: gradeLevel,
-            current_level: (currentLevel && currentLevel !== "None of These") ? currentLevel : gradeLevel,
+            current_level: gradeLevel,
             promo_code: promoCode || null, // ✅ Promo Code Added
             sdg_role: sdgRole,
             assigned_sdg_number: assignedSDGNumber,
