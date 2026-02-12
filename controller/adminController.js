@@ -156,9 +156,73 @@ const submitJuryScore = async (req, res) => {
     }
 };
 
-// ৫. ড্যাশবোর্ড স্ট্যাটস
+
+
+
+// const getDashboardStats = async (req, res) => {
+//     try {
+//         // ১. টোটাল সংখ্যা বের করা (এগুলো ঠিক আছে)
+//         const { count: totalEnrolment } = await supabase
+//             .from('user_profiles')
+//             .select('*', { count: 'exact', head: true });
+
+//         const { count: totalParticipant } = await supabase
+//             .from('user_profiles')
+//             .select('*', { count: 'exact', head: true })
+//             .not('assigned_sdg_number', 'is', null);
+
+//         const { count: secondRoundCount } = await supabase
+//             .from('round_2_selection')
+//             .select('*', { count: 'exact', head: true });
+
+//         const { count: finalistCount } = await supabase
+//             .from('round_2_selection')
+//             .select('*', { count: 'exact', head: true })
+//             .eq('status', 'selected');
+
+//         // ২. গ্রাফের জন্য ডাটা আনা (ফিক্সড লজিক) 🔥
+//         // আমরা এখানে রেঞ্জ বাড়িয়ে দিচ্ছি যাতে ১০০০-এর বেশি ডাটা আসে
+//         const { data: sdgStatsData, error: sdgError } = await supabase
+//             .from('user_profiles')
+//             .select('assigned_sdg_number')
+//             .not('assigned_sdg_number', 'is', null)
+//             .range(0, 9999); // ১০,০০০ ইউজার পর্যন্ত ডাটা ফেচ করবে
+
+//         if (sdgError) throw sdgError;
+
+//         // ৩. ক্যালকুলেশন
+//         const sdgCounts = {};
+//         for (let i = 1; i <= 17; i++) sdgCounts[i] = 0;
+
+//         sdgStatsData.forEach(user => {
+//             const num = user.assigned_sdg_number;
+//             if (num && num >= 1 && num <= 17) {
+//                 sdgCounts[num] = (sdgCounts[num] || 0) + 1;
+//             }
+//         });
+
+//         const sdg_registrations = Object.keys(sdgCounts).map(key => ({
+//             label: `SDG ${key}`,
+//             total: sdgCounts[key]
+//         }));
+
+//         res.status(200).json({
+//             total_enrolment: totalEnrolment || 0,
+//             total_participant: totalParticipant || 0,
+//             second_round_students: secondRoundCount || 0,
+//             total_finalists: finalistCount || 0,
+//             sdg_registrations: sdg_registrations
+//         });
+
+//     } catch (err) {
+//         console.error("Dashboard Stats Error:", err.message);
+//         res.status(500).json({ error: "ড্যাশবোর্ড ডাটা আনতে সমস্যা হয়েছে।" });
+//     }
+// };
+
 const getDashboardStats = async (req, res) => {
     try {
+        // ১. আগের মতো টোটাল কাউন্টগুলো নিয়ে আসা
         const { count: totalEnrolment } = await supabase
             .from('user_profiles')
             .select('*', { count: 'exact', head: true });
@@ -177,40 +241,26 @@ const getDashboardStats = async (req, res) => {
             .select('*', { count: 'exact', head: true })
             .eq('status', 'selected');
 
-        const { data: sdgStatsData, error: sdgError } = await supabase
-            .from('user_profiles')
-            .select('assigned_sdg_number');
+        // ২. সরাসরি ডাটাবেস থেকে SDG স্ট্যাটাস নিয়ে আসা 🔥
+        // এখানে আমরা আগের লুপ বা রেঞ্জ লজিক বাদ দিয়ে RPC কল করছি
+        const { data: sdgStats, error: sdgError } = await supabase.rpc('get_sdg_stats');
 
         if (sdgError) throw sdgError;
 
-        const sdgCounts = {};
-        for (let i = 1; i <= 17; i++) sdgCounts[i] = 0;
-
-        sdgStatsData.forEach(user => {
-            if (user.assigned_sdg_number) {
-                sdgCounts[user.assigned_sdg_number] = (sdgCounts[user.assigned_sdg_number] || 0) + 1;
-            }
-        });
-
-        const sdg_registrations = Object.keys(sdgCounts).map(key => ({
-            label: `SDG ${key}`,
-            total: sdgCounts[key]
-        }));
-
+        // ৩. রেসপন্স পাঠানো
         res.status(200).json({
             total_enrolment: totalEnrolment || 0,
             total_participant: totalParticipant || 0,
             second_round_students: secondRoundCount || 0,
             total_finalists: finalistCount || 0,
-            sdg_registrations: sdg_registrations
+            sdg_registrations: sdgStats // সরাসরি ডাটাবেস থেকে আসা সঠিক লিস্ট
         });
 
     } catch (err) {
         console.error("Dashboard Stats Error:", err.message);
-        res.status(500).json({ error: "ড্যাশবোর্ড ডাটা আনতে সমস্যা হয়েছে।" });
+        res.status(500).json({ error: "ড্যাশবোর্ড ডাটা আনতে সমস্যা হয়েছে।" });
     }
 };
-
 module.exports = {
     getCompetitionSettings,
     updateCompetitionSettings,

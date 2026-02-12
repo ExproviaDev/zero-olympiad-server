@@ -9,6 +9,8 @@ const videoRouter = require('./router/videoRouter');
 const bkashRoutes = require('./router/bkashRouter');
 const leaderboardRouter = require('./router/leaderboardRouter');
 const announcementRouter = require('./router/announcementRouter');
+const ambassadorRouter = require('./router/ambassadorRouter');
+const invoiceRouter = require('./router/invoiceRouter');
 require('dotenv').config();
 
 
@@ -47,6 +49,8 @@ app.use('/api/bkash', bkashRoutes);
 app.use('/api/leaderboard', leaderboardRouter);
 // Announcement Routes
 app.use('/api/announcement', announcementRouter);
+app.use('/api/ambassadors', ambassadorRouter);
+app.use('/api/invoice', invoiceRouter);
 
 
 app.get("/", async (req, res)=>{
