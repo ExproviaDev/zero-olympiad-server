@@ -32,7 +32,6 @@ exports.sendRegistrationEmail = async (userEmail, userName, sdgRole) => {
             html: template.html,
         });
 
-        console.log(`Email sent to ${userEmail} for role ${sdgRole}`);
         return { success: true, data };
     } catch (error) {
         console.error("Email Error:", error.message);

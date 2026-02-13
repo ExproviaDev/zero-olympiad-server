@@ -1,6 +1,4 @@
 const supabase = require('../config/db');
-
-// ১. কম্পিটিশন সেটিংস নিয়ে আসা
 const getCompetitionSettings = async (req, res) => {
     try {
         const { data, error } = await supabase
@@ -16,8 +14,6 @@ const getCompetitionSettings = async (req, res) => {
     }
 };
 
-// ২. কম্পিটিশন সেটিংস আপডেট করা
-// adminController.js
 
 const updateCompetitionSettings = async (req, res) => {
     try {
@@ -49,16 +45,11 @@ const updateCompetitionSettings = async (req, res) => {
     }
 };
 
-// ৩. জুরিদের জন্য রাউন্ড ২-এর ইউজার লিস্ট (আপডেটেড)
 const getRound2Submissions = async (req, res) => {
     try {
         const { sdg_number, status, page = 1, limit = 10 } = req.query;
-
-        // 🔥 FIX: String থেকে Integer এ কনভার্ট করা
         const pageInt = parseInt(page);
         const limitInt = parseInt(limit);
-
-        // Pagination Logic (এখন যোগফল সঠিক হবে)
         const from = (pageInt - 1) * limitInt;
         const to = from + limitInt - 1;
 
@@ -112,13 +103,11 @@ const getRound2Submissions = async (req, res) => {
 
     } catch (err) {
         console.error("Jury Fetch Error:", err.message);
-        res.status(500).json({ message: "ডাটা লোড করতে সমস্যা হয়েছে।" });
+        res.status(500).json({ message: "Jury Fetch Error" });
     }
 };
 
-// ৪. জুরি মার্ক এবং কমেন্ট আপডেট করা (আপডেটেড - অটোমেটিক টোটাল ক্যালকুলেশন)
 const submitJuryScore = async (req, res) => {
-    // ফ্রন্টএন্ড থেকে score_details অবজেক্ট আসবে
     const { submission_id, score_details, comments } = req.body;
 
     if (!submission_id || !score_details) {
@@ -126,11 +115,7 @@ const submitJuryScore = async (req, res) => {
     }
 
     try {
-        // ১. সার্ভার সাইডে টোটাল মার্ক ক্যালকুলেট করা (সিকিউরিটির জন্য)
-        // score_details দেখতে এমন হবে: { "Creativity": 8, "Technical": 9, ... }
         const calculatedTotal = Object.values(score_details).reduce((acc, val) => acc + parseFloat(val || 0), 0);
-
-        // ২. ডাটাবেস আপডেট
         const { data, error } = await supabase
             .from('round_2_selection')
             .update({
@@ -146,83 +131,18 @@ const submitJuryScore = async (req, res) => {
 
         res.status(200).json({
             success: true,
-            message: "মার্ক সফলভাবে সেভ হয়েছে।",
+            message: "Mark updated successfully.",
             total_score: calculatedTotal
         });
 
     } catch (err) {
         console.error("Submit Score Error:", err.message);
-        res.status(500).json({ message: "মার্ক আপডেট করা সম্ভব হয়নি।" });
+        res.status(500).json({ message: "Failed to update mark" });
     }
 };
 
-
-
-
-// const getDashboardStats = async (req, res) => {
-//     try {
-//         // ১. টোটাল সংখ্যা বের করা (এগুলো ঠিক আছে)
-//         const { count: totalEnrolment } = await supabase
-//             .from('user_profiles')
-//             .select('*', { count: 'exact', head: true });
-
-//         const { count: totalParticipant } = await supabase
-//             .from('user_profiles')
-//             .select('*', { count: 'exact', head: true })
-//             .not('assigned_sdg_number', 'is', null);
-
-//         const { count: secondRoundCount } = await supabase
-//             .from('round_2_selection')
-//             .select('*', { count: 'exact', head: true });
-
-//         const { count: finalistCount } = await supabase
-//             .from('round_2_selection')
-//             .select('*', { count: 'exact', head: true })
-//             .eq('status', 'selected');
-
-//         // ২. গ্রাফের জন্য ডাটা আনা (ফিক্সড লজিক) 🔥
-//         // আমরা এখানে রেঞ্জ বাড়িয়ে দিচ্ছি যাতে ১০০০-এর বেশি ডাটা আসে
-//         const { data: sdgStatsData, error: sdgError } = await supabase
-//             .from('user_profiles')
-//             .select('assigned_sdg_number')
-//             .not('assigned_sdg_number', 'is', null)
-//             .range(0, 9999); // ১০,০০০ ইউজার পর্যন্ত ডাটা ফেচ করবে
-
-//         if (sdgError) throw sdgError;
-
-//         // ৩. ক্যালকুলেশন
-//         const sdgCounts = {};
-//         for (let i = 1; i <= 17; i++) sdgCounts[i] = 0;
-
-//         sdgStatsData.forEach(user => {
-//             const num = user.assigned_sdg_number;
-//             if (num && num >= 1 && num <= 17) {
-//                 sdgCounts[num] = (sdgCounts[num] || 0) + 1;
-//             }
-//         });
-
-//         const sdg_registrations = Object.keys(sdgCounts).map(key => ({
-//             label: `SDG ${key}`,
-//             total: sdgCounts[key]
-//         }));
-
-//         res.status(200).json({
-//             total_enrolment: totalEnrolment || 0,
-//             total_participant: totalParticipant || 0,
-//             second_round_students: secondRoundCount || 0,
-//             total_finalists: finalistCount || 0,
-//             sdg_registrations: sdg_registrations
-//         });
-
-//     } catch (err) {
-//         console.error("Dashboard Stats Error:", err.message);
-//         res.status(500).json({ error: "ড্যাশবোর্ড ডাটা আনতে সমস্যা হয়েছে।" });
-//     }
-// };
-
 const getDashboardStats = async (req, res) => {
     try {
-        // ১. আগের মতো টোটাল কাউন্টগুলো নিয়ে আসা
         const { count: totalEnrolment } = await supabase
             .from('user_profiles')
             .select('*', { count: 'exact', head: true });
@@ -230,7 +150,7 @@ const getDashboardStats = async (req, res) => {
         const { count: totalParticipant } = await supabase
             .from('user_profiles')
             .select('*', { count: 'exact', head: true })
-            .not('assigned_sdg_number', 'is', null);
+            .eq('is_participated', true); // 🔥 নতুন কন্ডিশন
 
         const { count: secondRoundCount } = await supabase
             .from('round_2_selection')
@@ -241,8 +161,6 @@ const getDashboardStats = async (req, res) => {
             .select('*', { count: 'exact', head: true })
             .eq('status', 'selected');
 
-        // ২. সরাসরি ডাটাবেস থেকে SDG স্ট্যাটাস নিয়ে আসা 🔥
-        // এখানে আমরা আগের লুপ বা রেঞ্জ লজিক বাদ দিয়ে RPC কল করছি
         const { data: sdgStats, error: sdgError } = await supabase.rpc('get_sdg_stats');
 
         if (sdgError) throw sdgError;
@@ -258,7 +176,7 @@ const getDashboardStats = async (req, res) => {
 
     } catch (err) {
         console.error("Dashboard Stats Error:", err.message);
-        res.status(500).json({ error: "ড্যাশবোর্ড ডাটা আনতে সমস্যা হয়েছে।" });
+        res.status(500).json({ error: "Failed to fetch dashboard stats." });
     }
 };
 module.exports = {
