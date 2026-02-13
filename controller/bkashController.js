@@ -122,10 +122,6 @@ const getAuthHeaders = async () => {
                 }
             );
 
-            // 📄 PDF LOG: Grant Token Response
-            console.log("\n--- [PDF] Grant Token Response ---");
-            console.log(JSON.stringify(response.data, null, 2));
-
             token = response.data.id_token;
 
             await supabase.from('bkash_tokens').upsert({
@@ -162,12 +158,6 @@ exports.createPayment = async (req, res) => {
 
         const merchantInvoiceNumber = "Inv_" + crypto.randomUUID().substring(0, 8);
 
-        // 📄 PDF LOG: Create Payment Request
-        console.log("\n--- [PDF] Create Payment Request ---");
-        console.log(JSON.stringify({
-            mode: '0011', payerReference: "User_Registration", callbackURL: process.env.BKASH_CALLBACK_URL, amount: amount ? amount.toString() : "300", currency: "BDT", intent: "sale", merchantInvoiceNumber: merchantInvoiceNumber
-        }, null, 2));
-
         const { data } = await bkashAxios.post(`${process.env.BKASH_BASE_URL}/tokenized-checkout/payment/create`, {
             mode: '0011',
             payerReference: "User_Registration",
@@ -177,10 +167,6 @@ exports.createPayment = async (req, res) => {
             intent: "sale",
             merchantInvoiceNumber: merchantInvoiceNumber
         }, { headers });
-
-        // 📄 PDF LOG: Create Payment Response
-        console.log("\n--- [PDF] Create Payment Response ---");
-        console.log(JSON.stringify(data, null, 2));
 
         if (data.errorMessageEn || (data.statusCode && data.statusCode !== '0000')) {
             const code = data.statusCode || data.errorCode;
@@ -229,8 +215,6 @@ exports.bkashCallback = async (req, res) => {
                     `${process.env.BKASH_BASE_URL}/tokenized-checkout/payment/query`,
                     { paymentId: cleanPaymentID }, { headers }
                 );
-                console.log("\n--- [PDF] Query Payment Response (Cancel Case) ---");
-                console.log(JSON.stringify(cancelQuery, null, 2));
             } catch (e) { console.log("Cancel Log Query Skipped"); }
 
             await supabase.from('payment_logs').insert({
@@ -248,9 +232,6 @@ exports.bkashCallback = async (req, res) => {
                     { paymentId: cleanPaymentID }, { headers }
                 );
 
-                // 📄 PDF LOG: Query Payment Response
-                console.log("\n--- [PDF] Query Payment Response (Failure Case) ---");
-                console.log(JSON.stringify(data, null, 2));
 
                 if (data) {
                     invoiceNumber = data.merchantInvoiceNumber || invoiceNumber;
@@ -278,10 +259,6 @@ exports.bkashCallback = async (req, res) => {
                     { paymentId: cleanPaymentID }, { headers }
                 );
                 paymentData = data;
-
-                // 📄 PDF LOG: Execute Payment Response
-                console.log("\n--- [PDF] Execute Payment Response ---");
-                console.log(JSON.stringify(paymentData, null, 2));
 
             } catch (execErr) {
                 try {
@@ -336,10 +313,6 @@ exports.queryPayment = async (req, res) => {
         const headers = await getAuthHeaders();
         const { data } = await bkashAxios.post(`${process.env.BKASH_BASE_URL}/tokenized-checkout/query/payment`, { paymentId: paymentID }, { headers });
 
-        // 📄 PDF LOG
-        console.log("\n--- [PDF] Query Payment Response ---");
-        console.log(JSON.stringify(data, null, 2));
-
         res.status(200).json(data);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -352,9 +325,6 @@ exports.searchTransaction = async (req, res) => {
         const headers = await getAuthHeaders();
         const { data } = await bkashAxios.post(`${process.env.BKASH_BASE_URL}/tokenized-checkout/general/search-transaction`, { trxId: trxID }, { headers });
 
-        // 📄 PDF LOG
-        console.log("\n--- [PDF] Search Transaction Response ---");
-        console.log(JSON.stringify(data, null, 2));
 
         res.status(200).json(data);
     } catch (error) {

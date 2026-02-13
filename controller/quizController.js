@@ -172,13 +172,12 @@ const getSingleQuizForUser = async (req, res) => {
 const submitQuiz = async (req, res) => {
     const { user_id, quiz_set_id, answers, time_taken, sdgCategory, roundNumber } = req.body;
 
-    console.log(`Submitting quiz for User: ${user_id}, Category: ${sdgCategory}`);
-
     if (!user_id || !quiz_set_id) {
         return res.status(400).json({ success: false, error: "Missing user_id or quiz_set_id" });
     }
 
     try {
+        // ১. সঠিক উত্তর বের করে স্কোর ক্যালকুলেশন (এটি আগের মতোই থাকবে)
         const { data: correctQuestions, error: fetchError } = await supabase
             .from('questions')
             .select('id, correct_answer')
@@ -195,57 +194,32 @@ const submitQuiz = async (req, res) => {
             }
         });
 
-        const finalTimeTaken = Number(time_taken) || 0;
-        const { error: insertError } = await supabase
-            .from('quiz_submissions')
-            .insert([{
-                user_id,
-                quiz_set_id,
-                answers: userAnswers,
-                score: calculatedScore,
-                time_taken: finalTimeTaken,
-                completed_at: new Date().toISOString()
-            }]);
+        // ২. 🔥 সব ডাটা একসাথে RPC এর মাধ্যমে ডাটাবেসে পাঠানো
+        const { error: rpcError } = await supabase.rpc('submit_quiz_optimized', {
+            p_user_id: user_id,
+            p_quiz_set_id: quiz_set_id,
+            p_answers: userAnswers,
+            p_score: calculatedScore,
+            p_time_taken: Number(time_taken) || 0,
+            p_sdg_category: sdgCategory || "SDG Activist",
+            p_round_number: roundNumber || 1
+        });
 
-        if (insertError) throw insertError;
-
-
-        const { error: perfError } = await supabase
-            .from('round_performances')
-            .upsert({
-                user_id: user_id,
-                quiz_set_id: quiz_set_id,
-                round_number: roundNumber || 1,
-                quiz_score: calculatedScore,
-                time_taken: finalTimeTaken,
-                total_calculated_score: calculatedScore,
-                sdg_category: sdgCategory || "SDG Activist",
-                is_promoted: false
-            }, { onConflict: 'user_id, round_number' });
-
-        if (perfError) throw perfError;
-
-        // 🔥 ৫. ইউজার প্রোফাইলে PARTICIPATION স্ট্যাটাস আপডেট করা
-        // এই অপারেশনটিই ইউজারের জন্য সার্টিফিকেট আনলক করবে
-        const { error: profileError } = await supabase
-            .from('user_profiles')
-            .update({ is_participated: true }) // স্ট্যাটাস TRUE করে দেওয়া হলো
-            .eq('user_id', user_id);
-
-        if (profileError) throw profileError;
+        if (rpcError) throw rpcError;
 
         res.status(201).json({
             success: true,
-            message: "Quiz submitted and synced with leaderboard!",
-            score: calculatedScore,
-            category: sdgCategory
+            message: "Quiz submitted successfully through RPC!",
+            score: calculatedScore
         });
 
     } catch (error) {
-        console.error("Critical Sync Error:", error.message);
-        res.status(500).json({ success: false, error: error.message });
+        console.error("RPC Submission Error:", error.message);
+        res.status(500).json({ success: false, error: "সাবমিট করতে সার্ভারে সমস্যা হয়েছে।" });
     }
 };
+
+
 const updateQuizStatus = async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
