@@ -112,35 +112,6 @@ const sendWelcomeEmail = async (email, name, courseDetails) => {
     }
 };
 
-// // --- SDG Number ক্যালকুলেশন হেল্পার ---
-// const calculateAssignedSDG = (gradeLevel, currentLevel) => {
-//     const grade = gradeLevel ? gradeLevel.trim() : "";
-//     const current = currentLevel ? currentLevel.trim() : "";
-
-//     // SDG 1-4 (Class 5 to 8)
-//     if (grade.includes("Class 5") || grade.includes("Grade 5") || grade.includes("PYP 5")) return 1;
-//     if (grade.includes("Class 6") || grade.includes("Grade 6") || grade.includes("MYP 1")) return 2;
-//     if (grade.includes("Class 7") || grade.includes("Grade 7") || grade.includes("MYP 2")) return 3;
-//     if (grade.includes("Class 8") || grade.includes("Grade 8") || grade.includes("MYP 3")) return 4;
-
-//     // SDG 5-10 (Class 9 to 12)
-//     if (grade.includes("Class 9") || grade.includes("Grade 9") || grade.includes("MYP 4")) return 5;
-//     if (grade.includes("Class 10") || grade.includes("Grade 10") || grade.includes("MYP 5")) return 6;
-//     if (grade.includes("SSC") || grade.includes("O Level")) return 7;
-//     if (grade.includes("Class 11") || grade.includes("Grade 11") || grade.includes("DP 1")) return 8;
-//     if (grade.includes("Class 12") || grade.includes("Grade 12") || grade.includes("DP 2")) return 9;
-//     if (grade.includes("HSC") || grade.includes("A Level")) return 10;
-
-//     // SDG 11-16 (Higher Ed)
-//     if (current.includes("1st Year") || current.includes("Diploma")) return 11;
-//     if (current.includes("2nd Year")) return 12;
-//     if (current.includes("3rd Year")) return 13;
-//     if (current.includes("4th Year")) return 14;
-//     if (current.includes("5th Year") || current.includes("Internship")) return 15;
-//     if (current.includes("Postgraduate") || current.includes("Kamil") || current.includes("Dawrah")) return 16;
-
-//     return 0; // Default
-// };
 
 // --- SDG Number ক্যালকুলেশন হেল্পার (Diploma সহ ১৭টি SDG) ---
 const calculateAssignedSDG = (level) => {
@@ -202,25 +173,25 @@ router.post('/register', async (req, res) => {
             // SDG 1-4: Activist
             sdgRole = "SDG Activist";
             courseDetails = {
-                categoryName: "Class 5 to Class 8 (or equivalent)",
-                courseName: "Sport For Climate Action",
-                courseLink: "https://unccelearn.org/course/view.php?id=215&page=overview"
+                categoryName: "Class 5 to Class 8 (or equivalent) - (SDG 1 to SDG 4)",
+                courseName: "A Participant Guide of the UN Climate Change Process",
+                courseLink: "https://unccelearn.org/course/view.php?id=174&page=overview"
             };
-        } else if (assignedSDGNumber >= 5 && assignedSDGNumber <= 11) {
-            // SDG 5-11: Ambassador
+        } else if (assignedSDGNumber >= 5 && assignedSDGNumber <= 10) {
+            // SDG 5-10: Ambassador
             sdgRole = "SDG Ambassador";
             courseDetails = {
-                categoryName: "Class 9 to University Admission Candidate (or equivalent)",
-                courseName: "Becoming A Climate Champion",
-                courseLink: "https://unccelearn.org/course/view.php?id=201&page=overview"
+                categoryName: "Class 9 to University Admission Candidate (or equivalent) - (SDG 5 to SDG 10)",
+                courseName: "Convention on Long-range Transboundary Air Pollution",
+                courseLink: "https://unccelearn.org/course/view.php?id=150&page=overview"
             };
-        } else if (assignedSDGNumber >= 12 && assignedSDGNumber <= 17) {
-            // SDG 12-17: Achiever
+        } else if (assignedSDGNumber >= 11 && assignedSDGNumber <= 17) {
+            // SDG 11-17: Achiever
             sdgRole = "SDG Achiever";
             courseDetails = {
-                categoryName: "University & Diploma (or equivalent)",
-                courseName: "Scaling Climate Finance",
-                courseLink: "https://unccelearn.org/course/view.php?id=205&page=overview"
+                categoryName: "University & Diploma (or equivalent) - (SDG 11 to SDG 17)",
+                courseName: "Climate Change International Legal Regime",
+                courseLink: "https://unccelearn.org/course/view.php?id=174&page=overview"
             };
         }
 
