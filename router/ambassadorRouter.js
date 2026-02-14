@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 // আপনার মিডলওয়্যার ফাইলের পাথ অনুযায়ী এগুলো ইমপোর্ট করুন
 const { verifyToken, verifyAdmin } = require('../middleware/authMiddleware');
-const { getAllAmbassadors, getReferralList, getAmbassadorSelfStats } = require('../controller/ambassadorController');
+const { getAllAmbassadors, getReferralList, getAmbassadorSelfStats, updatePromoCode } = require('../controller/ambassadorController');
 
 router.get('/all', verifyToken, verifyAdmin, getAllAmbassadors);
 
@@ -10,5 +10,6 @@ router.get('/all', verifyToken, verifyAdmin, getAllAmbassadors);
 router.get('/referrals/:promoCode', verifyToken, getReferralList);
 
 router.get('/my-stats', verifyToken, getAmbassadorSelfStats);
+router.put('/update-code', verifyToken, updatePromoCode);
 
 module.exports = router;
