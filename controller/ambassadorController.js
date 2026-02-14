@@ -47,7 +47,7 @@ const getReferralList = async (req, res) => {
 
 const getAmbassadorSelfStats = async (req, res) => {
     try {
-        const userId = req.user.sub || req.user.id; 
+        const userId = req.user.sub || req.user.id;
         if (!userId) {
             return res.status(401).json({ success: false, message: "User ID not found in token." });
         }
@@ -83,8 +83,67 @@ const getAmbassadorSelfStats = async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 };
+
+// ৩. অ্যাম্বাসেডর নিজের প্রোমো কোড সেট করবে (যদি আগে null থাকে)
+const updatePromoCode = async (req, res) => {
+    const { newPromoCode } = req.body;
+    const userId = req.user.sub || req.user.id; // মিডলওয়্যার থেকে ইউজার আইডি
+
+    if (!newPromoCode) {
+        return res.status(400).json({ success: false, message: "Promo code is required." });
+    }
+
+    const formattedCode = newPromoCode.trim().toUpperCase();
+
+    try {
+        // ১. চেক করা যে ইউজারের কোড অলরেডি আছে কি না
+        const { data: profile, error: profileError } = await supabase
+            .from('ambassador_profiles')
+            .select('promo_code')
+            .eq('user_id', userId)
+            .single();
+
+        if (profileError || !profile) {
+            return res.status(404).json({ success: false, message: "Ambassador profile not found." });
+        }
+
+        // কোড যদি অলরেডি থেকে থাকে, তবে এডিট করতে দিবে না
+        if (profile.promo_code) {
+            return res.status(400).json({ success: false, message: "Promo code is already set and cannot be changed." });
+        }
+
+        // ২. চেক করা যে এই কোডটি অন্য কোনো অ্যাম্বাসেডর নিয়েছে কি না
+        const { data: existingCode } = await supabase
+            .from('ambassador_profiles')
+            .select('id')
+            .eq('promo_code', formattedCode)
+            .maybeSingle();
+
+        if (existingCode) {
+            return res.status(400).json({ success: false, message: "This promo code is already taken. Please try another." });
+        }
+
+        // ৩. আপডেট লজিক
+        const { error: updateError } = await supabase
+            .from('ambassador_profiles')
+            .update({ promo_code: formattedCode })
+            .eq('user_id', userId);
+
+        if (updateError) throw updateError;
+
+        res.status(200).json({
+            success: true,
+            message: "Promo code set successfully!",
+            promoCode: formattedCode
+        });
+
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
 module.exports = {
     getAllAmbassadors,
     getReferralList,
-    getAmbassadorSelfStats
+    getAmbassadorSelfStats,
+    updatePromoCode
 };

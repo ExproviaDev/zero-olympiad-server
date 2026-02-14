@@ -91,17 +91,46 @@ const updateUserStatus = async (req, res) => {
   const { role, is_blocked } = req.body;
 
   try {
+    // ১. অ্যাম্বাসেডর লজিক
+    if (role === 'ambassador') {
+      const { data: existingAmb } = await supabase
+        .from('ambassador_profiles')
+        .select('id')
+        .eq('user_id', id)
+        .maybeSingle();
+
+      if (!existingAmb) {
+        // নিশ্চিত করুন আপনার DB তে promo_code কলামটি NULL এলাউ করে
+        const { error: ambError } = await supabase
+          .from('ambassador_profiles')
+          .insert([{
+            user_id: id,
+            promo_code: null,
+            total_referrals: 0
+          }]);
+
+        if (ambError) throw ambError;
+      }
+    }
+
+    // ২. শুধু যে ডাটাগুলো পাঠানো হয়েছে সেগুলোই আপডেট করা (Dynamic Update)
+    const updateData = {};
+    if (role !== undefined) updateData.role = role;
+    if (is_blocked !== undefined) updateData.is_blocked = is_blocked;
+
     const { data, error } = await supabase
       .from("user_profiles")
-      .update({ role, is_blocked })
+      .update(updateData)
       .eq("user_id", id);
 
     if (error) throw error;
     res.status(200).json({ success: true, message: "User updated successfully", data });
   } catch (error) {
+    console.error("Update User Error:", error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
 const deleteUser = async (req, res) => {
   const { id } = req.params;
   try {
