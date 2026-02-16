@@ -21,6 +21,7 @@ const ALLOWED_ORIGINS = [
     'http://localhost:3000',     
     'https://z-o-frontend.vercel.app',
     'https://zeroolympiad.faatihaaayat.com',
+    'https://www.zeroolympiad.com/',
 ];
 const corsOptions = {
     origin: (origin, callback) => {
