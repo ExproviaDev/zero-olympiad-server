@@ -20,8 +20,8 @@ const PORT = process.env.PORT || 4000;
 const ALLOWED_ORIGINS = [
     'http://localhost:3000',     
     'https://z-o-frontend.vercel.app',
-    'https://www.zeroolympiad.com/',
-    'https://zeroolympiad.com/',
+    'https://www.zeroolympiad.com',
+    'https://zeroolympiad.com',
     
 ];
 const corsOptions = {
@@ -60,7 +60,7 @@ app.get("/", async (req, res)=>{
     res.send(x);
 })
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
 
 module.exports = app
