@@ -7,7 +7,7 @@ const sgMail = require('@sendgrid/mail');
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 // --- ইমেইল পাঠানোর ফাংশন ---
-const sendWelcomeEmail = async (email, name, courseDetails) => {
+const sendWelcomeEmail = async (email, name, courseDetails, examDateEn, examDateBn) => {
     const msg = {
         to: email,
         from: process.env.SENDER_EMAIL, // আপনার ভেরিফাইড সেন্ডার ইমেইল
@@ -66,7 +66,7 @@ const sendWelcomeEmail = async (email, name, courseDetails) => {
             <ul>
                 <li class="list-item">Upon completion, you will receive a certificate directly from the United Nations institution.</li>
                 <li class="list-item">The 30 MCQ questions for the first round of Zero Olympiad will be based on this course.</li>
-                <li class="list-item"><strong>Exam Date:</strong> May 8.</li>
+                <li class="list-item"><strong>Exam Date:</strong> ${examDateEn}.</li>
                 <li class="list-item">No marks will be deducted for wrong answers.</li>
             </ul>
             <p>You can log in to the Zero Olympiad website using your email and password to participate in the exam.</p>
@@ -98,11 +98,11 @@ const sendWelcomeEmail = async (email, name, courseDetails) => {
                 <li class="list-item">কোর্স সম্পন্ন করার সাথে সাথে জাতিসংঘের এই প্রতিষ্ঠান থেকেই সার্টিফিকেট প্রদান করা হবে।</li>
                 <li class="list-item">এই কোর্স থেকেই Zero Olympiad এর ১ম রাউন্ডের ৩০টি MCQ প্রশ্ন থাকবে।</li>
                 <li class="list-item">পরবর্তী জীবনে বায়োডাটা বা সিভিতে এই কোর্স সম্পন্ন করার তথ্য উল্লেখ করলে তা আপনাকে অন্যদের থেকে এগিয়ে রাখবে।</li>
-                <li class="list-item"><strong>পরীক্ষার তারিখ:</strong> ৮ মে।</li>
+                <li class="list-item"><strong>পরীক্ষার তারিখ:</strong> ${examDateBn}।</li>
                 <li class="list-item">৩০টি প্রশ্ন থাকবে (মোট ৩০ মার্ক)। ভুল উত্তরের জন্য কোন নম্বর কাটা যাবে না।</li>
             </ul>
             
-            <p>জিরো অলিম্পিয়াডের ওয়েবসাইটে আপনার ইমেইল ও পাসওয়ার্ড দিয়ে লগইন করে ৮ মে দিনের যেকোন সময় পরীক্ষায় অংশগ্রহণ করতে পারবেন।</p>
+            <p>জিরো অলিম্পিয়াডের ওয়েবসাইটে আপনার ইমেইল ও পাসওয়ার্ড দিয়ে লগইন করে ${examDateBn} দিনের যেকোন সময় পরীক্ষায় অংশগ্রহণ করতে পারবেন।</p>
 
             <br>
             <p style="margin-bottom: 0;">Best regards / শুভেচ্ছান্তে,</p>
@@ -182,11 +182,15 @@ router.post('/register', async (req, res) => {
 
         let sdgRole = "General Member";
         let courseDetails = {};
+        let examDateEn = "";
+        let examDateBn = ""; 
 
         // আপনার দেয়া টেবিল অনুযায়ী ১৭টি SDG এর ম্যাপিং
         if (assignedSDGNumber >= 1 && assignedSDGNumber <= 4) {
             // SDG 1-4: Activist
             sdgRole = "SDG Activist";
+            examDateEn = "7 May";
+            examDateBn = "৭ মে";
             courseDetails = {
                 categoryName: "Class 5 to Class 8 (or equivalent) - (SDG 1 to SDG 4)",
                 courseName: "A Participant Guide of the UN Climate Change Process",
@@ -195,6 +199,8 @@ router.post('/register', async (req, res) => {
         } else if (assignedSDGNumber >= 5 && assignedSDGNumber <= 10) {
             // SDG 5-10: Ambassador
             sdgRole = "SDG Ambassador";
+            examDateEn = "8 May";
+            examDateBn = "৮ মে";
             courseDetails = {
                 categoryName: "Class 9 to University Admission Candidate (or equivalent) - (SDG 5 to SDG 10)",
                 courseName: "Convention on Long-range Transboundary Air Pollution",
@@ -203,6 +209,8 @@ router.post('/register', async (req, res) => {
         } else if (assignedSDGNumber >= 11 && assignedSDGNumber <= 17) {
             // SDG 11-17: Achiever
             sdgRole = "SDG Achiever";
+            examDateEn = "9 May";
+            examDateBn = "৯ মে";
             courseDetails = {
                 categoryName: "University & Diploma (or equivalent) - (SDG 11 to SDG 17)",
                 courseName: "Climate Change International Legal Regime",
@@ -279,7 +287,7 @@ router.post('/register', async (req, res) => {
         await supabase.from('payment_verifications').update({ status: 'used' }).eq('verification_token', paymentToken);
 
         // ৭. ইমেইল পাঠানো
-        await sendWelcomeEmail(email, name, courseDetails);
+        await sendWelcomeEmail(email, name, courseDetails, examDateEn, examDateBn);
 
         res.status(201).json({
             message: "Registration Successful! Please check your email for course details.",
@@ -299,7 +307,7 @@ router.post('/forgot-password', async (req, res) => {
 
     try {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-            redirectTo: 'https://z-o-frontend.vercel.app/update-password',
+            redirectTo: 'https://www.zeroolympiad.com/update-password',
         });
         if (error) return res.status(400).json({ message: "Reset password failed." });
         res.status(200).json({ message: "Password reset link sent to your email." });
