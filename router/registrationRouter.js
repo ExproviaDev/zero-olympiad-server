@@ -24,12 +24,18 @@ const sendWelcomeEmail = async (email, name, courseDetails, examDateEn, examDate
         .content { padding: 30px; color: #333333; line-height: 1.6; }
         .greeting { color: #1e3a8a; font-size: 20px; font-weight: bold; margin-bottom: 20px; }
         .card { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 20px 0; border-left: 5px solid #2563eb; }
-        .btn { display: inline-block; background-color: #2563eb; color: #ffffff !important; padding: 12px 25px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-top: 15px; }
+        
+        /* নতুন বড় বাটন ডিজাইন (Course) */
+        .btn-primary { display: inline-block; background-color: #2563eb; color: #ffffff !important; padding: 16px 32px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 18px; margin-top: 15px; box-shadow: 0 4px 6px rgba(37,99,235,0.3); text-align: center; }
+        
+        /* নতুন বড় বাটন ডিজাইন (Video) */
+        .btn-video { display: inline-block; background-color: #dc2626; color: #ffffff !important; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; margin-top: 15px; box-shadow: 0 4px 6px rgba(220,38,38,0.3); text-align: center; }
+        
         .divider { border-top: 1px solid #e5e7eb; margin: 30px 0; }
         .footer { background-color: #f1f5f9; padding: 20px; text-align: center; font-size: 12px; color: #64748b; }
         .list-item { margin-bottom: 8px; }
         a { color: #2563eb; text-decoration: none; }
-        .video-guide { background-color: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 15px; margin-top: 15px; text-align: center; font-size: 14px; }
+        .video-guide { background-color: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 20px; margin-top: 25px; text-align: center; font-size: 15px; }
     </style>
 </head>
 <body>
@@ -48,17 +54,20 @@ const sendWelcomeEmail = async (email, name, courseDetails, examDateEn, examDate
                 <p style="margin-top:0; color: #475569; font-size: 14px;"><strong>Your Category:</strong> ${courseDetails.categoryName}</p>
                 <hr style="border: 0; border-top: 1px solid #cbd5e1; margin: 10px 0;">
                 <p style="margin-bottom: 5px;"><strong>Your Assigned Course:</strong></p>
-                <h2 style="color: #2563eb; margin: 0 0 10px 0; font-size: 22px;">${courseDetails.courseName}</h2>
-                <p>You can complete this course online for free at your own convenience.</p>
+                <h2 style="color: #2563eb; margin: 0 0 15px 0; font-size: 22px; text-align: center;">${courseDetails.courseName}</h2>
+                <p style="text-align: center;">You can complete this course online for free at your own convenience.</p>
+                
                 <center>
-                    <a href="${courseDetails.courseLink}" target="_blank" class="btn">Start Course Now</a>
+                    <a href="${courseDetails.courseLink}" target="_blank" class="btn-primary">▶ Start Course Now</a>
                 </center>
                 
                 <div class="video-guide">
-                    <p style="margin: 0; color: #9a3412;">
-                        Although the courses on the UN website are very easy and manageable on your own, if you face any difficulties, please follow this video guide: 
-                        <br><a href="https://www.youtube.com/watch?v=zOmotLWToLY" style="font-weight: bold; color: #c2410c;">Watch Guide Video</a>
+                    <p style="margin: 0 0 15px 0; color: #9a3412;">
+                        Although the courses on the UN website are very easy and manageable on your own, if you face any difficulties, please follow this step-by-step video guide:
                     </p>
+                    <center>
+                        <a href="https://www.youtube.com/watch?v=zOmotLWToLY" target="_blank" class="btn-video">🎥 Watch Guide Video</a>
+                    </center>
                 </div>
             </div>
 
@@ -79,17 +88,20 @@ const sendWelcomeEmail = async (email, name, courseDetails, examDateEn, examDate
 
             <div class="card">
                 <p style="margin-top:0; font-size: 14px;">আপনি যেহেতু <strong>${courseDetails.categoryName}</strong> ক্যাটাগরিতে রেজিস্ট্রেশন করেছেন, তাই আপনার কোর্স হবে:</p>
-                <h2 style="color: #2563eb; margin: 10px 0; font-size: 20px;">${courseDetails.courseName}</h2>
-                <p>কোর্সের লিংকে ক্লিক করে এই কোর্সটি অনলাইনে বিনামূল্যে নিজের সুবিধামত সময়ে করা যাবে।</p>
+                <h2 style="color: #2563eb; margin: 15px 0; font-size: 20px; text-align: center;">${courseDetails.courseName}</h2>
+                <p style="text-align: center;">কোর্সের লিংকে ক্লিক করে এই কোর্সটি অনলাইনে বিনামূল্যে নিজের সুবিধামত সময়ে করা যাবে।</p>
+                
                 <center>
-                    <a href="${courseDetails.courseLink}" target="_blank" class="btn">কোর্স শুরু করতে ক্লিক করুন</a>
+                    <a href="${courseDetails.courseLink}" target="_blank" class="btn-primary">▶ কোর্স শুরু করতে ক্লিক করুন</a>
                 </center>
 
                 <div class="video-guide">
-                    <p style="margin: 0; color: #9a3412;">
+                    <p style="margin: 0 0 15px 0; color: #9a3412;">
                         যদিও জাতিসঙ্ঘের ওয়েবসাইট থেকে কোর্সগুলো করা খুবই সহজ এবং আপনি নিজেই তা করতে পারবেন, তবুও কোনো সমস্যার সম্মুখীন হলে এই ভিডিওটি দেখে সেই অনুযায়ী সম্পন্ন করুন: 
-                        <br><a href="https://www.youtube.com/watch?v=zOmotLWToLY" style="font-weight: bold; color: #c2410c;">গাইড ভিডিওটি দেখুন</a>
                     </p>
+                    <center>
+                        <a href="https://www.youtube.com/watch?v=zOmotLWToLY" target="_blank" class="btn-video">🎥 গাইড ভিডিওটি দেখুন</a>
+                    </center>
                 </div>
             </div>
 
@@ -111,12 +123,11 @@ const sendWelcomeEmail = async (email, name, courseDetails, examDateEn, examDate
 
         <div class="footer">
             <p>&copy; 2026 Zero Olympiad. All rights reserved.</p>
-            <p><a href="#">Contact Us</a> | <a href="#">Website</a></p>
         </div>
     </div>
 </body>
 </html>
-        `,
+        `
     };
 
     try {
@@ -183,7 +194,7 @@ router.post('/register', async (req, res) => {
         let sdgRole = "General Member";
         let courseDetails = {};
         let examDateEn = "";
-        let examDateBn = ""; 
+        let examDateBn = "";
 
         // আপনার দেয়া টেবিল অনুযায়ী ১৭টি SDG এর ম্যাপিং
         if (assignedSDGNumber >= 1 && assignedSDGNumber <= 4) {
