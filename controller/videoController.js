@@ -5,12 +5,26 @@ const getVideoRoundSettings = async (req, res) => {
     try {
         const { data: settings, error } = await supabase
             .from('competition_settings')
+            .select('*') // 🔥 FIX: এই লাইনটি মিসিং ছিল
             .eq('id', 1)
-            .single();
+            .maybeSingle();
 
         if (error) throw error;
 
-        // হার্ডকোডেড রাউন্ড ২ সেটিংস চেক (যেহেতু আপনি ফিক্সড রাখতে চেয়েছেন)
+        // যদি ডাটাবেসে সেটিংস না থাকে, তবে ডিফল্ট ভ্যালু পাঠান (সার্ভার ক্র্যাশ এড়াতে)
+        if (!settings) {
+             return res.status(200).json({ 
+                 success: true, 
+                 data: {
+                    round_name: 'round_2',
+                    is_enabled: false, 
+                    start_time: null,     
+                    end_time: null,         
+                    server_time: new Date() 
+                 } 
+             });
+        }
+
         const roundPrefix = 'round_2'; 
 
         const responseData = {
@@ -25,7 +39,7 @@ const getVideoRoundSettings = async (req, res) => {
 
     } catch (error) {
         console.error("Settings Error:", error.message);
-        res.status(500).json({ success: false, message: error.message });
+        res.status(500).json({ success: false, message: "Server Error: Could not fetch settings" });
     }
 };
 
