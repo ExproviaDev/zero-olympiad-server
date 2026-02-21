@@ -225,7 +225,7 @@ router.post('/register', async (req, res) => {
             courseDetails = {
                 categoryName: "University & Diploma (or equivalent) - (SDG 11 to SDG 17)",
                 courseName: "Climate Change International Legal Regime",
-                courseLink: "https://unccelearn.org/course/view.php?id=174&page=overview"
+                courseLink: "https://unccelearn.org/course/view.php?id=68&page=overview&lang=en"
             };
         }
 
