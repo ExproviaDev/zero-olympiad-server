@@ -171,7 +171,7 @@ const calculateAssignedSDG = (level) => {
 router.post('/register', async (req, res) => {
     const {
         email, password, name, phone, district, institution,
-        educationType, gradeLevel, promoCode, paymentToken, role, myPromoCode,
+        educationType, gradeLevel, promoCode, paymentToken, role, myPromoCode, signup_source
     } = req.body;
 
     try {
@@ -255,7 +255,8 @@ router.post('/register', async (req, res) => {
             assigned_sdg_number: assignedSDGNumber,
             round_type: "initial round_1",
             role: role || "user",
-            payment_verify_token: paymentToken
+            payment_verify_token: paymentToken,
+            signup_source: signup_source || 'organic'
         }]);
 
         if (profileError) throw profileError;
