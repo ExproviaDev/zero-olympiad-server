@@ -179,10 +179,94 @@ const getDashboardStats = async (req, res) => {
         res.status(500).json({ error: "Failed to fetch dashboard stats." });
     }
 };
+
+
+// adminController.js a add korun
+const getMarketingUsers = async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20; // 20 jon kore
+        const search = req.query.search || ''; // Search keyword
+
+        const from = (page - 1) * limit;
+        const to = from + limit - 1;
+
+        // Base query with exact count
+        let query = supabase
+            .from('user_profiles')
+            .select('name, email, phone, signup_source, created_at', { count: 'exact' });
+
+        // 🔥 Partial Search Logic (face likhle facebook pabe)
+        if (search) {
+            query = query.ilike('signup_source', `%${search}%`);
+        }
+
+        // Pagination & Sorting (Notun ra age ashbe)
+        const { data, count, error } = await query
+            .range(from, to)
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        res.status(200).json({
+            success: true,
+            data,
+            totalUsers: count,
+            totalPages: Math.ceil(count / limit),
+            currentPage: page
+        });
+
+    } catch (err) {
+        console.error("Marketing Users Error:", err.message);
+        res.status(500).json({ success: false, error: err.message });
+    }
+};
+const getMarketingStats = async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('user_profiles')
+            .select('signup_source');
+
+        if (error) throw error;
+
+        // ডিফল্ট সোর্সগুলো (যাতে ০ দেখায়)
+        const expectedSources = ['Organic', 'Facebook', 'Mojaru', 'Instagram', 'Google', 'YouTube', 'Chorcha'];
+        const sourceCounts = {};
+        
+        expectedSources.forEach(source => {
+            sourceCounts[source.toLowerCase()] = { displayName: source, count: 0 };
+        });
+
+        data.forEach(user => {
+            let rawSource = user.signup_source ? user.signup_source.trim() : 'Organic';
+            let lowerSource = rawSource.toLowerCase();
+
+            if (sourceCounts[lowerSource]) {
+                sourceCounts[lowerSource].count += 1;
+            } else {
+                sourceCounts[lowerSource] = { displayName: rawSource, count: 1 };
+            }
+        });
+
+        const formattedData = Object.values(sourceCounts)
+            .map(item => ({ source: item.displayName, count: item.count }))
+            .sort((a, b) => b.count - a.count);
+
+        res.status(200).json({ success: true, data: formattedData });
+
+    } catch (err) {
+        console.error("Marketing Stats Error:", err.message);
+        res.status(500).json({ success: false, error: err.message });
+    }
+};
+// Obossoi eita router-e export kore add korben: 
+// router.get('/marketing-users', getMarketingUsers);
 module.exports = {
     getCompetitionSettings,
     updateCompetitionSettings,
     getRound2Submissions,
     submitJuryScore,
-    getDashboardStats
+    getDashboardStats,
+    getMarketingUsers,
+    getMarketingStats
 };
