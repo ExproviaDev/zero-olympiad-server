@@ -45,6 +45,46 @@ const getReferralList = async (req, res) => {
 };
 
 
+// const getAmbassadorSelfStats = async (req, res) => {
+//     try {
+//         const userId = req.user.sub || req.user.id;
+//         if (!userId) {
+//             return res.status(401).json({ success: false, message: "User ID not found in token." });
+//         }
+
+//         const { data: profile, error: profileError } = await supabase
+//             .from('ambassador_profiles')
+//             .select('*')
+//             .eq('user_id', userId)
+//             .single();
+
+//         if (profileError || !profile) {
+//             return res.status(404).json({ success: false, message: "Ambassador profile not found." });
+//         }
+
+//         // খ. ওই প্রোমো কোড ব্যবহার করে কারা জয়েন করেছে তাদের ডিটেইলস আনা
+//         const { data: referrals, error: refError } = await supabase
+//             .from('user_profiles')
+//             .select('name, district, institution, created_at')
+//             .eq('promo_code', profile.promo_code)
+//             .eq('role', 'contestor');
+
+//         if (refError) throw refError;
+
+//         res.status(200).json({
+//             success: true,
+//             myPromoCode: profile.promo_code,
+//             totalReferrals: profile.total_referrals,
+//             referralList: referrals
+//         });
+
+//     } catch (error) {
+//         console.error("Server Error:", error.message);
+//         res.status(500).json({ success: false, error: error.message });
+//     }
+// };
+
+
 const getAmbassadorSelfStats = async (req, res) => {
     try {
         const userId = req.user.sub || req.user.id;
@@ -52,25 +92,56 @@ const getAmbassadorSelfStats = async (req, res) => {
             return res.status(401).json({ success: false, message: "User ID not found in token." });
         }
 
-        const { data: profile, error: profileError } = await supabase
+        // ১. .single() এর বদলে .maybeSingle() ব্যবহার করা হলো (যাতে ডাটা না পেলে ক্র্যাশ না করে)
+        let { data: profile, error: profileError } = await supabase
             .from('ambassador_profiles')
             .select('*')
             .eq('user_id', userId)
-            .single();
+            .maybeSingle();
 
-        if (profileError || !profile) {
-            return res.status(404).json({ success: false, message: "Ambassador profile not found." });
+        // ২. অটো-হিলিং (Auto-healing) লজিক UPSERT সহ (যাতে ডুপ্লিকেট না হয়)
+        if (!profile) {
+            // আগে চেক করি ইউজারের আসল রোল আসলেই 'ambassador' কি না
+            const { data: userProfile } = await supabase
+                .from('user_profiles')
+                .select('role')
+                .eq('user_id', userId)
+                .single();
+
+            if (userProfile && userProfile.role === 'ambassador') {
+                // ইউজারের রোল অ্যাম্বাসেডর, কিন্তু প্রোফাইল মিসিং। তাই UPSERT করছি:
+                const { data: upsertedProfile, error: upsertError } = await supabase
+                    .from('ambassador_profiles')
+                    .upsert(
+                        [{ user_id: userId, promo_code: null, total_referrals: 0 }],
+                        { onConflict: 'user_id' } // এটি নিশ্চিত করবে যে ডুপ্লিকেট রো তৈরি হবে না
+                    )
+                    .select()
+                    .single();
+
+                if (upsertError) throw upsertError;
+
+                profile = upsertedProfile; // নতুন প্রোফাইলটি ভেরিয়েবলে সেট করে দিলাম
+                console.log(`✅ Auto-healed (Upserted) missing ambassador profile for: ${userId}`);
+            } else {
+                return res.status(404).json({ success: false, message: "Ambassador profile not found or unauthorized." });
+            }
         }
 
-        // খ. ওই প্রোমো কোড ব্যবহার করে কারা জয়েন করেছে তাদের ডিটেইলস আনা
-        const { data: referrals, error: refError } = await supabase
-            .from('user_profiles')
-            .select('name, district, institution, created_at')
-            .eq('promo_code', profile.promo_code)
-            .eq('role', 'contestor');
+        // ৩. ওই প্রোমো কোড ব্যবহার করে কারা জয়েন করেছে তাদের ডিটেইলস আনা
+        let referrals = [];
+        if (profile.promo_code) {
+            const { data: refData, error: refError } = await supabase
+                .from('user_profiles')
+                .select('name, district, institution, created_at')
+                .eq('promo_code', profile.promo_code)
+                .eq('role', 'contestor');
 
-        if (refError) throw refError;
+            if (refError) throw refError;
+            referrals = refData || [];
+        }
 
+        // ৪. ফ্রন্টএন্ডে সঠিক রেসপন্স পাঠানো
         res.status(200).json({
             success: true,
             myPromoCode: profile.promo_code,
@@ -79,11 +150,10 @@ const getAmbassadorSelfStats = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Server Error:", error.message);
+        console.error("Server Error in getAmbassadorSelfStats:", error.message);
         res.status(500).json({ success: false, error: error.message });
     }
 };
-
 // ৩. অ্যাম্বাসেডর নিজের প্রোমো কোড সেট করবে (যদি আগে null থাকে)
 const updatePromoCode = async (req, res) => {
     const { newPromoCode } = req.body;
