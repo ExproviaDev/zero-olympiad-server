@@ -5,13 +5,11 @@ const getVideoRoundSettings = async (req, res) => {
     try {
         const { data: settings, error } = await supabase
             .from('competition_settings')
-            .select('*') // 🔥 FIX: এই লাইনটি মিসিং ছিল
+            .select('*') //
             .eq('id', 1)
             .maybeSingle();
 
         if (error) throw error;
-
-        // যদি ডাটাবেসে সেটিংস না থাকে, তবে ডিফল্ট ভ্যালু পাঠান (সার্ভার ক্র্যাশ এড়াতে)
         if (!settings) {
              return res.status(200).json({ 
                  success: true, 
