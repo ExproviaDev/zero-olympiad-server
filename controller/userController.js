@@ -6,7 +6,7 @@ const crypto = require('crypto');
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 const addMember = async (req, res) => {
-  const { email, role, name, phone } = req.body;
+  const { email, role, name, phone, promoCode } = req.body;
 
   try {
     const tempPassword = crypto.randomBytes(4).toString('hex');
@@ -20,17 +20,19 @@ const addMember = async (req, res) => {
     if (authError) throw authError;
 
     // 🔥 Dynamic Role Logic
-    let roundType = "staff_entry";
-    let sdgRole = "Volunteer";
+    let roundType = "initial round_1";
+    let sdgRole = "General Member";
 
     // User বা Ambassador হলে তাদের ইনিশিয়াল রাউন্ডে পাঠানো হবে
-    if (role === "user" || role === "ambassador") {
-      roundType = "initial round_1";
+    if (role === "manager") {
+      roundType = "staff_entry";
+      sdgRole = "Jury Member";
+    } else if (role === "admin") {
+      roundType = "admin_access"; // অ্যাডমিনদের জন্য আলাদা রাউন্ড টাইপ রাখা ভালো
+      sdgRole = "Admin";
+    } else if (role === "ambassador") {
+      sdgRole = "SDG Ambassador";
     }
-
-    // রোলের উপর ভিত্তি করে SDG Role সেট করা
-    if (role === "user") sdgRole = "General Member";
-    if (role === "ambassador") sdgRole = "SDG Ambassador";
 
     const { error: profileError } = await supabase
       .from("user_profiles")
@@ -38,8 +40,8 @@ const addMember = async (req, res) => {
         {
           user_id: authUser.user.id,
           email: email,
-          name: name || (role === 'user' ? 'Participant' : 'Jury Member'),
-          phone: phone || "00000000000",
+          name: name,
+          phone: phone,
           role: role || 'user',
           district: "N/A",
           institution: "Zero Olympiad",
@@ -49,14 +51,15 @@ const addMember = async (req, res) => {
           sdg_role: sdgRole,
           assigned_sdg_number: 0,
           round_type: roundType,
-          is_blocked: false
+          is_blocked: false,
+          promo_code: promoCode || null
         }
       ]);
 
     if (profileError) throw profileError;
 
     // 🔥 Extra Logic: User বা Ambassador হলে Round 1 টেবিলে ডাটা রাখা
-    if (role === 'user' || role === 'ambassador') {
+    if (role === 'user' || role === 'ambassador' || role === 'Participant') {
       await supabase.from('round_1_initial').insert([{
         user_id: authUser.user.id,
         quiz_score: 0,
@@ -71,6 +74,22 @@ const addMember = async (req, res) => {
         promo_code: null, // Admin কাস্টম কোড পরে আপডেট করে দিতে পারবে
         total_referrals: 0
       }]);
+    }
+    if (promoCode) {
+      // ওই প্রোমো কোডটি কোন অ্যাম্বাসেডরের তা খুঁজে বের করা
+      const { data: ambassadorData } = await supabase
+        .from('ambassador_profiles')
+        .select('id, total_referrals')
+        .eq('promo_code', promoCode.toUpperCase())
+        .single();
+
+      if (ambassadorData) {
+        // অ্যাম্বাসেডরের রেফারাল সংখ্যা ১ বাড়ানো
+        await supabase
+          .from('ambassador_profiles')
+          .update({ total_referrals: (ambassadorData.total_referrals || 0) + 1 })
+          .eq('id', ambassadorData.id);
+      }
     }
 
     const msg = {
@@ -202,14 +221,23 @@ const updateUserStatus = async (req, res) => {
 const deleteUser = async (req, res) => {
   const { id } = req.params;
   try {
-    const { error } = await supabase
+    // ১. প্রথমে Supabase Auth থেকে ইউজারকে ডিলিট করা
+    const { error: authError } = await supabase.auth.admin.deleteUser(id);
+
+    if (authError) throw authError;
+
+    // ২. (ঐচ্ছিক) যদি আপনার ডাটাবেসে Cascade Delete সেট করা না থাকে,
+    // তবে user_profiles থেকেও ম্যানুয়ালি ডিলিট করতে হবে।
+    const { error: profileError } = await supabase
       .from("user_profiles")
       .delete()
       .eq("user_id", id);
 
-    if (error) throw error;
-    res.status(200).json({ success: true, message: "User deleted successfully" });
+    if (profileError) throw profileError;
+
+    res.status(200).json({ success: true, message: "User completely deleted from system" });
   } catch (error) {
+    console.error("Delete User Error:", error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 };
