@@ -328,4 +328,36 @@ router.post('/forgot-password', async (req, res) => {
     }
 });
 
+// --- Verify OTP Route ---
+router.post('/verify-otp', async (req, res) => {
+    const { email, token } = req.body;
+
+    if (!email || !token) {
+        return res.status(400).json({ message: "Email and OTP token are required." });
+    }
+
+    try {
+        // Supabase-এর verifyOtp মেথড কল করা হচ্ছে
+        const { data, error } = await supabase.auth.verifyOtp({
+            email: email,
+            token: token,
+            type: 'signup' // রেজিস্ট্রেশনের জন্য টাইপ হবে 'signup'
+        });
+
+        if (error) {
+            console.error("OTP Verification Error:", error.message);
+            return res.status(400).json({ message: "Invalid or expired OTP. Please try again." });
+        }
+
+        res.status(200).json({
+            message: "Email verified successfully! You can now log in.",
+            user: data.user
+        });
+
+    } catch (err) {
+        console.error("Server Error during OTP verification:", err);
+        res.status(500).json({ message: "Server error, please try again later." });
+    }
+});
+
 module.exports = router;
