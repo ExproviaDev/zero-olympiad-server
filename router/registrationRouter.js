@@ -360,4 +360,26 @@ router.post('/verify-otp', async (req, res) => {
     }
 });
 
+// --- Resend OTP Route ---
+router.post('/resend-otp', async (req, res) => {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ message: "Email is required." });
+
+    try {
+        const { error } = await supabase.auth.resend({
+            type: 'signup',
+            email: email,
+        });
+
+        if (error) {
+            console.error("Resend OTP Error:", error.message);
+            return res.status(400).json({ message: "Failed to resend OTP. Please check the email." });
+        }
+
+        res.status(200).json({ message: "OTP resent successfully." });
+    } catch (err) {
+        res.status(500).json({ message: "Server error." });
+    }
+});
+
 module.exports = router;
