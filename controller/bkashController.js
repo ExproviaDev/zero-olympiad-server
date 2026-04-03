@@ -162,7 +162,8 @@ exports.createPayment = async (req, res) => {
             mode: '0011',
             payerReference: "User_Registration",
             callbackURL: process.env.BKASH_CALLBACK_URL,
-            amount: amount ? amount.toString() : "300",
+            // amount: amount ? amount.toString() : "300",
+            amount: "300",
             currency: "BDT",
             intent: "sale",
             merchantInvoiceNumber: merchantInvoiceNumber
@@ -272,14 +273,40 @@ exports.bkashCallback = async (req, res) => {
                 }
             }
 
+            // if (paymentData && (paymentData.statusCode === '0000' || paymentData.transactionStatus === 'Completed')) {
+            //     const trxId = paymentData.trxID || paymentData.trxId;
+            //     const verificationToken = crypto.randomUUID();
+
+            //     await supabase.from('payment_verifications').insert({
+            //         payment_id: cleanPaymentID,
+            //         trx_id: trxId,
+            //         amount: parseFloat(paymentData.amount || 0),
+            //         verification_token: verificationToken,
+            //         status: 'completed',
+            //         customer_number: paymentData.customerMsisdn || paymentData.payerAccount
+            //     });
+
+            //     return res.redirect(`${process.env.FRONTEND_URL}/registration?step=3&token=${verificationToken}`);
+            // }
             if (paymentData && (paymentData.statusCode === '0000' || paymentData.transactionStatus === 'Completed')) {
+
+                // ✅ বাগ ফিক্স: এখানে চেক করতে হবে ইউজার আসলেই ৩০০ টাকা দিয়েছে কি না
+                const paidAmount = parseFloat(paymentData.amount || 0);
+                if (paidAmount < 300) {
+                    await supabase.from('payment_logs').insert({
+                        payment_id: cleanPaymentID, invoice: invoiceNumber, status: 'failed', message: 'Amount mismatch/Partial payment', created_at: transactionTime
+                    });
+                    return res.redirect(`${process.env.FRONTEND_URL}/payment-failed?message=Invalid Payment Amount`);
+                }
+
+                // ৩০০ টাকা ঠিক থাকলে এরপর ডাটাবেসে এন্ট্রি হবে
                 const trxId = paymentData.trxID || paymentData.trxId;
                 const verificationToken = crypto.randomUUID();
 
                 await supabase.from('payment_verifications').insert({
                     payment_id: cleanPaymentID,
                     trx_id: trxId,
-                    amount: parseFloat(paymentData.amount || 0),
+                    amount: paidAmount, // এখানে paidAmount ভ্যারিয়েবলটা দিয়ে দিলাম
                     verification_token: verificationToken,
                     status: 'completed',
                     customer_number: paymentData.customerMsisdn || paymentData.payerAccount
