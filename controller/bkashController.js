@@ -151,11 +151,8 @@ const getAuthHeaders = async () => {
 // --- Create Payment ---
 exports.createPayment = async (req, res) => {
     try {
-        const { amount } = req.body;
         const headers = await getAuthHeaders();
-
         if (!headers) return res.status(500).json({ error: "bKash Auth Failed." });
-
         const merchantInvoiceNumber = "Inv_" + crypto.randomUUID().substring(0, 8);
 
         const { data } = await bkashAxios.post(`${process.env.BKASH_BASE_URL}/tokenized-checkout/payment/create`, {
