@@ -60,7 +60,7 @@ app.get("/", async (req, res)=>{
     res.send(x);
 })
 
-// app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
 
 module.exports = app
