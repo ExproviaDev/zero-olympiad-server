@@ -1,14 +1,41 @@
 const supabase = require('../config/db');
 
+// // ১. সকল অ্যাম্বাসেডরদের লিস্ট ফেচ করা (অ্যাডমিনের জন্য)
+// const getAllAmbassadors = async (req, res) => {
+//     try {
+//         const { data, error } = await supabase
+//             .from('ambassador_profiles')
+//             .select(`
+//                 id,
+//                 promo_code,
+//                 total_referrals,
+//                 created_at,
+//                 user_profiles (
+//                     name,
+//                     email,
+//                     phone,
+//                     district,
+//                     institution
+//                 )
+//             `)
+//             .order('total_referrals', { ascending: false }); // সবচেয়ে বেশি রেফারাল উপরে থাকবে
+
+//         if (error) throw error;
+//         res.status(200).json({ success: true, data });
+//     } catch (error) {
+//         res.status(500).json({ success: false, error: error.message });
+//     }
+// };
+
+
 // ১. সকল অ্যাম্বাসেডরদের লিস্ট ফেচ করা (অ্যাডমিনের জন্য)
 const getAllAmbassadors = async (req, res) => {
     try {
-        const { data, error } = await supabase
+        const { data: ambassadors, error } = await supabase
             .from('ambassador_profiles')
             .select(`
                 id,
                 promo_code,
-                total_referrals,
                 created_at,
                 user_profiles (
                     name,
@@ -17,15 +44,44 @@ const getAllAmbassadors = async (req, res) => {
                     district,
                     institution
                 )
-            `)
-            .order('total_referrals', { ascending: false }); // সবচেয়ে বেশি রেফারাল উপরে থাকবে
+            `);
 
         if (error) throw error;
-        res.status(200).json({ success: true, data });
+
+        // ✅ বাগ ফিক্স: প্রত্যেক অ্যাম্বাসেডরের জন্য আসল রেফারেল কাউন্ট করা (Case-insensitive)
+        const updatedAmbassadors = await Promise.all(ambassadors.map(async (amb) => {
+            let actualCount = 0;
+            if (amb.promo_code) {
+                // প্রোমো কোডকে trim এবং uppercase করে ম্যাচ করা হচ্ছে
+                const formattedCode = amb.promo_code.trim().toUpperCase();
+
+                // user_profiles টেবিল থেকে কাউন্ট বের করা
+                const { count, error: countError } = await supabase
+                    .from('user_profiles')
+                    .select('id', { count: 'exact', head: true }) // শুধু কাউন্ট নিবে, পুরো ডাটা নয়
+                    .eq('promo_code', formattedCode)
+                    .eq('role', 'contestor');
+
+                if (!countError) {
+                    actualCount = count || 0;
+                }
+            }
+
+            return {
+                ...amb,
+                total_referrals: actualCount // আসল কাউন্টটা এখানে সেট করে দিলাম
+            };
+        }));
+
+        // বেশি রেফারেল যাদের, তাদের উপরে দেখানোর জন্য সর্টিং (Sorting)
+        updatedAmbassadors.sort((a, b) => b.total_referrals - a.total_referrals);
+
+        res.status(200).json({ success: true, data: updatedAmbassadors });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
 };
+
 
 // ২. নির্দিষ্ট অ্যাম্বাসেডরের আন্ডারে কারা জয়েন করেছে তাদের লিস্ট দেখা
 const getReferralList = async (req, res) => {
