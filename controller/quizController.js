@@ -214,8 +214,19 @@ const submitQuiz = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("RPC Submission Error:", error.message);
-        res.status(500).json({ success: false, error: "সাবমিট করতে সার্ভারে সমস্যা হয়েছে।" });
+        console.error("RPC Submission Error:", {
+            userId,
+            quizSetId,
+            errorCode: error.code,
+            errorMessage: error.message,
+            timestamp: new Date()
+        });
+        res.status(500).json({ 
+            success: false,
+            error: process.env.NODE_ENV === 'production' 
+                ? 'Server error' 
+                : error.message 
+        });
     }
 };
 
@@ -257,6 +268,22 @@ const checkAttempt = async (req, res) => {
     }
 };
 
+const getUserAttempts = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { data: attempts, error } = await supabase
+            .from('quiz_submissions')
+            .select('quiz_set_id')
+            .eq('user_id', userId);
+
+        if (error) throw error;
+
+        res.status(200).json({ attempts: attempts.map(a => a.quiz_set_id) });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
 module.exports = {
     createFullQuiz,
     getAllQuizzes,
@@ -267,5 +294,6 @@ module.exports = {
     getSingleQuizForUser,
     submitQuiz,
     updateQuizStatus,
-    checkAttempt
+    checkAttempt,
+    getUserAttempts
 };

@@ -186,7 +186,11 @@ const getMarketingUsers = async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 20; // 20 jon kore
-        const search = req.query.search || ''; // Search keyword
+        const search = req.query.search?.trim() || ''; // Search keyword
+
+        if (search.length > 100) {
+            return res.status(400).json({ error: "Search too long" });
+        }
 
         const from = (page - 1) * limit;
         const to = from + limit - 1;
@@ -198,7 +202,8 @@ const getMarketingUsers = async (req, res) => {
 
         // 🔥 Partial Search Logic (face likhle facebook pabe)
         if (search) {
-            query = query.ilike('signup_source', `%${search}%`);
+            const sanitized = search.replace(/[%_]/g, '\\$&');
+            query = query.ilike('signup_source', `%${sanitized}%`);
         }
 
         // Pagination & Sorting (Notun ra age ashbe)
