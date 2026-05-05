@@ -85,7 +85,8 @@ const getBkashErrorMessage = (code) => {
 };
 
 // --- Auth Headers Handler ---
-const getAuthHeaders = async () => {
+// forceRefresh=true দিলে cached token ignore করে নতুন token আনবে
+const getAuthHeaders = async ({ forceRefresh = false } = {}) => {
     try {
         const { BKASH_USERNAME, BKASH_PASSWORD, BKASH_APP_KEY, BKASH_APP_SECRET, BKASH_BASE_URL } = process.env;
 
@@ -104,10 +105,15 @@ const getAuthHeaders = async () => {
         const now = Date.now();
         const TOKEN_VALIDITY_MS = 55 * 60 * 1000; // 55 minutes
 
-        const isExpired = !tokenData || !tokenData.auth_token || !tokenData.updated_at || now - new Date(tokenData.updated_at).getTime() > TOKEN_VALIDITY_MS;
+        const isExpired =
+            forceRefresh ||
+            !tokenData ||
+            !tokenData.auth_token ||
+            !tokenData.updated_at ||
+            now - new Date(tokenData.updated_at).getTime() > TOKEN_VALIDITY_MS;
 
         if (isExpired) {
-            console.log("🔄 [bKash Token] Fetching new token from bKash...");
+            console.log(`🔄 [bKash Token] Fetching new token from bKash...${forceRefresh ? " (forced)" : ""}`);
             const tokenStartTime = Date.now();
             
             try {
@@ -128,23 +134,36 @@ const getAuthHeaders = async () => {
                 const tokenGenerationTime = Date.now() - tokenStartTime;
                 console.log(`✅ [bKash Token] Generated in ${tokenGenerationTime}ms`);
 
-                // ✅ FIX: Don't wait for DB save, do it async
-                supabase.from('bkash_tokens').upsert({
-                    id: 1,
-                    auth_token: token,
-                    updated_at: new Date().toISOString()
-                }).catch(err => console.error("⚠️ [bKash Token] DB cache failed:", err.message));
+                // ✅ Don't block on DB cache write (and don't throw if it fails)
+                // Note: Supabase query builder isn't a native Promise (may not have .catch),
+                // so use .then(...) safely.
+                supabase
+                    .from('bkash_tokens')
+                    .upsert({
+                        id: 1,
+                        auth_token: token,
+                        updated_at: new Date().toISOString()
+                    })
+                    .then(({ error: cacheError }) => {
+                        if (cacheError) {
+                            console.error("⚠️ [bKash Token] DB cache failed:", cacheError.message);
+                        }
+                    })
+                    .catch?.((err) => {
+                        // In case the runtime returns a real Promise in future versions
+                        console.error("⚠️ [bKash Token] DB cache failed:", err?.message || err);
+                    });
 
             } catch (tokenError) {
                 console.error("❌ [bKash Token] Generation failed:", tokenError.message);
-                
-                // ✅ FIX: Fallback - use expired token if available instead of failing completely
+                // Forced refresh fail হলে stale token দিয়ে proceed করা উচিত না (401 loop তৈরি হয়)
+                if (forceRefresh) return null;
+
+                // Non-forced path এ last-resort fallback (avoid total outage)
                 if (tokenData?.auth_token) {
-                    console.warn("⚠️ [bKash Token] Using expired cached token as fallback");
+                    console.warn("⚠️ [bKash Token] Using cached token as last-resort fallback");
                     token = tokenData.auth_token;
-                } else {
-                    return null;
-                }
+                } else return null;
             }
         } else {
             token = tokenData.auth_token;
@@ -182,7 +201,7 @@ exports.createPayment = async (req, res) => {
         
         const merchantInvoiceNumber = "Inv_" + crypto.randomUUID().substring(0, 8);
 
-        const { data } = await bkashAxios.post(`${process.env.BKASH_BASE_URL}/tokenized-checkout/payment/create`, {
+        const createPayload = {
             mode: '0011',
             payerReference: "User_Registration",
             callbackURL: process.env.BKASH_CALLBACK_URL,
@@ -191,7 +210,38 @@ exports.createPayment = async (req, res) => {
             currency: "BDT",
             intent: "sale",
             merchantInvoiceNumber: merchantInvoiceNumber
-        }, { headers });
+        };
+
+        let data;
+        try {
+            const resp = await bkashAxios.post(
+                `${process.env.BKASH_BASE_URL}/tokenized-checkout/payment/create`,
+                createPayload,
+                { headers }
+            );
+            data = resp.data;
+        } catch (err) {
+            const status = err?.response?.status;
+            const msg = err?.response?.data?.message || err?.response?.data?.errorMessageEn || err?.message;
+
+            // Token expired / Unauthorized => force refresh and retry once
+            if (status === 401 || /token.*expired/i.test(String(msg || ""))) {
+                console.warn("⚠️ [bKash] Unauthorized/expired token. Forcing token refresh & retry...");
+                const refreshedHeaders = await getAuthHeaders({ forceRefresh: true });
+                if (!refreshedHeaders) {
+                    return res.status(500).json({ error: "bKash Auth refresh failed. Please try again." });
+                }
+
+                const retryResp = await bkashAxios.post(
+                    `${process.env.BKASH_BASE_URL}/tokenized-checkout/payment/create`,
+                    createPayload,
+                    { headers: refreshedHeaders }
+                );
+                data = retryResp.data;
+            } else {
+                throw err;
+            }
+        }
 
         console.log(`[bKash] Payment create response:`, {
             statusCode: data?.statusCode,
