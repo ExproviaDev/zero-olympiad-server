@@ -1,6 +1,6 @@
 const express = require("express");
 const cors = require('cors');
-const rateLimit = require("express-rate-limit");
+const { rateLimit, ipKeyGenerator } = require("express-rate-limit");
 const registrationRouter = require("./router/registrationRouter");
 const authRouter = require("./router/auth")
 const quizRouter = require('./router/quizRouter');
@@ -18,24 +18,49 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+// Cloudflare/Vercel proxy chain থেকে real client IP resolve করার জন্য
+app.set("trust proxy", 1);
+
+const getClientIp = (req) => {
+  const ip =
+    req.headers["cf-connecting-ip"] ||
+    req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+    req.ip;
+
+  return ipKeyGenerator(ip);
+};
+
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: "Too many requests from this IP, please try again later."
+  max: Number(process.env.API_RATE_LIMIT_MAX || 1500),
+  keyGenerator: getClientIp,
+  skip: (req) => req.method === "OPTIONS",
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many requests from this IP, please try again later." }
 });
 
 // Strict limit for sensitive operations
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 5, // Only 5 login attempts per 15 minutes
-  message: "Too many login attempts, please try again later."
+  max: Number(process.env.LOGIN_RATE_LIMIT_MAX || 80),
+  keyGenerator: getClientIp,
+  skip: (req) => req.method === "OPTIONS",
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many login attempts, please try again later." }
 });
 
 const otpLimiter = rateLimit({
   windowMs: 5 * 60 * 1000, // 5 minutes
-  max: 3, // Only 3 OTP requests per 5 minutes
-  message: "Too many OTP requests, please try again later."
+  max: Number(process.env.OTP_RATE_LIMIT_MAX || 10),
+  keyGenerator: getClientIp,
+  skip: (req) => req.method === "OPTIONS",
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many OTP requests, please try again later." }
 });
 
 const ALLOWED_ORIGINS = [
@@ -102,7 +127,7 @@ app.get("/", async (req, res)=>{
     res.send(x);
 })
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
 
 module.exports = app
