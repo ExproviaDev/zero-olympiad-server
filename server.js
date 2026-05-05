@@ -43,11 +43,24 @@ const ALLOWED_ORIGINS = [
     'https://z-o-frontend.vercel.app',
     'https://www.zeroolympiad.com',
     'https://zeroolympiad.com',
-    
 ];
+
+const EXTRA_ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+const isAllowedOrigin = (origin) => {
+    if (!origin) return true;
+    if (ALLOWED_ORIGINS.includes(origin) || EXTRA_ALLOWED_ORIGINS.includes(origin)) return true;
+
+    // Allow Vercel preview deployments for this frontend family
+    return /^https:\/\/(z-o-frontend|zero-olympiad-frontend)(-git-[a-z0-9-]+)?\.vercel\.app$/i.test(origin);
+};
+
 const corsOptions = {
     origin: (origin, callback) => {
-        if (ALLOWED_ORIGINS.indexOf(origin) !== -1 || !origin) {
+        if (isAllowedOrigin(origin)) {
             callback(null, true);
         } else {
             console.log("Blocked by CORS:", origin);
@@ -89,7 +102,7 @@ app.get("/", async (req, res)=>{
     res.send(x);
 })
 
-// app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
 
 module.exports = app

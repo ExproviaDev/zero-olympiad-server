@@ -143,27 +143,65 @@ const submitJuryScore = async (req, res) => {
 
 const getDashboardStats = async (req, res) => {
     try {
-        const { count: totalEnrolment } = await supabase
+        const { count: totalEnrolment, error: enrolmentError } = await supabase
             .from('user_profiles')
             .select('*', { count: 'exact', head: true });
+        if (enrolmentError) throw enrolmentError;
 
-        const { count: totalParticipant } = await supabase
+        const { count: totalParticipant, error: participantError } = await supabase
             .from('user_profiles')
             .select('*', { count: 'exact', head: true })
             .eq('is_participated', true); // 🔥 নতুন কন্ডিশন
+        if (participantError) throw participantError;
 
-        const { count: secondRoundCount } = await supabase
+        const { count: secondRoundCount, error: secondRoundError } = await supabase
             .from('round_2_selection')
             .select('*', { count: 'exact', head: true });
+        if (secondRoundError) throw secondRoundError;
 
-        const { count: finalistCount } = await supabase
+        const { count: finalistCount, error: finalistError } = await supabase
             .from('round_2_selection')
             .select('*', { count: 'exact', head: true })
             .eq('status', 'selected');
+        if (finalistError) throw finalistError;
 
-        const { data: sdgStats, error: sdgError } = await supabase.rpc('get_sdg_stats');
+        let sdgStats = [];
+        const { data: rpcStats, error: sdgError } = await supabase.rpc('get_sdg_stats');
 
-        if (sdgError) throw sdgError;
+        if (!sdgError && Array.isArray(rpcStats)) {
+            // RPC data may come as {sdg_number, registration_count} shape
+            sdgStats = rpcStats.map((row) => ({
+                label: row?.label || `SDG ${row?.sdg_number}`,
+                total: row?.total ?? row?.registration_count ?? 0,
+            }));
+        } else {
+            // Fallback: compute SDG registrations from user_profiles
+            console.warn("get_sdg_stats RPC unavailable, using fallback aggregation:", sdgError?.message);
+            const { data: profileRows, error: profileAggError } = await supabase
+                .from('user_profiles')
+                .select('assigned_sdg_number');
+
+            if (profileAggError) throw profileAggError;
+
+            const sdgCountMap = {};
+            for (let i = 1; i <= 17; i++) {
+                sdgCountMap[i] = 0;
+            }
+
+            (profileRows || []).forEach((row) => {
+                const sdgNumber = Number(row?.assigned_sdg_number);
+                if (Number.isInteger(sdgNumber) && sdgNumber >= 1 && sdgNumber <= 17) {
+                    sdgCountMap[sdgNumber] += 1;
+                }
+            });
+
+            sdgStats = Object.entries(sdgCountMap).map(([sdgNumber, count]) => ({
+                label: `SDG ${sdgNumber}`,
+                total: count,
+                sdg_number: Number(sdgNumber),
+                registration_count: count
+            }));
+        }
 
         // ৩. রেসপন্স পাঠানো
         res.status(200).json({
@@ -171,7 +209,7 @@ const getDashboardStats = async (req, res) => {
             total_participant: totalParticipant || 0,
             second_round_students: secondRoundCount || 0,
             total_finalists: finalistCount || 0,
-            sdg_registrations: sdgStats // সরাসরি ডাটাবেস থেকে আসা সঠিক লিস্ট
+            sdg_registrations: sdgStats || []
         });
 
     } catch (err) {
