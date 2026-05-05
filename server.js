@@ -1,22 +1,66 @@
 const express = require("express");
-const quizRouter = require("./router/quizRouter");
-const serverless = require('serverless-http');
+const cors = require('cors');
+const registrationRouter = require("./router/registrationRouter");
+const authRouter = require("./router/auth")
+const quizRouter = require('./router/quizRouter');
+const adminRouter = require('./router/adminRouter')
+const markRouter = require('./router/markRouter');
+const videoRouter = require('./router/videoRouter');
+const bkashRoutes = require('./router/bkashRouter');
+const leaderboardRouter = require('./router/leaderboardRouter');
+const announcementRouter = require('./router/announcementRouter');
+const ambassadorRouter = require('./router/ambassadorRouter');
+const invoiceRouter = require('./router/invoiceRouter');
+require('dotenv').config();
+
+
 const app = express();
-
-
 const PORT = process.env.PORT || 4000;
 
-app.use(express.json());
-app.use('/', quizRouter);
+const ALLOWED_ORIGINS = [
+    'http://localhost:3000',     
+    'https://z-o-frontend.vercel.app',
+    'https://www.zeroolympiad.com',
+    'https://zeroolympiad.com',
+    
+];
+const corsOptions = {
+    origin: (origin, callback) => {
+        if (ALLOWED_ORIGINS.indexOf(origin) !== -1 || !origin) {
+            callback(null, true);
+        } else {
+            console.log("Blocked by CORS:", origin);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    credentials: true,
+    optionsSuccessStatus: 200
+};
 
+app.use(cors(corsOptions));
+app.use(express.json());
+
+app.use('/api/user', registrationRouter); 
+app.use('/api/auth', authRouter);
+app.use('/api/admin', quizRouter);
+app.use('/api/admin', adminRouter);
+app.use('/api/mark', markRouter);
+app.use('/api/video', videoRouter);
+app.use('/api/bkash', bkashRoutes);
+app.use('/api/leaderboard', leaderboardRouter);
+// Announcement Routes
+app.use('/api/announcement', announcementRouter);
+app.use('/api/ambassadors', ambassadorRouter);
+app.use('/api/invoice', invoiceRouter);
 
 
 app.get("/", async (req, res)=>{
-  const x = 'server is running successfully';
-  res.send(x);
-})
-app.listen(PORT, ()=>{
-  console.log(`server is running on port: ${PORT}`);
+    const x = 'Zero Olympiad server is ok!';
+    res.send(x);
 })
 
-module.exports.app = serverless(app);
+// app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+
+module.exports = app
