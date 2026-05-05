@@ -90,7 +90,7 @@ const getAuthHeaders = async () => {
         const { BKASH_USERNAME, BKASH_PASSWORD, BKASH_APP_KEY, BKASH_APP_SECRET, BKASH_BASE_URL } = process.env;
 
         if (!BKASH_USERNAME || !BKASH_PASSWORD || !BKASH_APP_KEY || !BKASH_APP_SECRET) {
-            console.error("Critical Error: bKash credentials missing in .env");
+            console.error("❌ Critical Error: bKash credentials missing in .env");
             return null;
         }
 
@@ -102,37 +102,54 @@ const getAuthHeaders = async () => {
 
         let token;
         const now = Date.now();
-        const TOKEN_VALIDITY_MS = 55 * 60 * 1000;
+        const TOKEN_VALIDITY_MS = 55 * 60 * 1000; // 55 minutes
 
         const isExpired = !tokenData || !tokenData.auth_token || !tokenData.updated_at || now - new Date(tokenData.updated_at).getTime() > TOKEN_VALIDITY_MS;
 
         if (isExpired) {
-            console.log("Fetching new bKash Token...");
-
-            const response = await bkashAxios.post(
-                `${BKASH_BASE_URL}/tokenized-checkout/auth/grant-token`,
-                { app_key: BKASH_APP_KEY, app_secret: BKASH_APP_SECRET },
-                {
-                    headers: {
-                        "Content-Type": "application/json",
-                        "Accept": "application/json",
-                        "username": BKASH_USERNAME,
-                        "password": BKASH_PASSWORD
+            console.log("🔄 [bKash Token] Fetching new token from bKash...");
+            const tokenStartTime = Date.now();
+            
+            try {
+                const response = await bkashAxios.post(
+                    `${BKASH_BASE_URL}/tokenized-checkout/auth/grant-token`,
+                    { app_key: BKASH_APP_KEY, app_secret: BKASH_APP_SECRET },
+                    {
+                        headers: {
+                            "Content-Type": "application/json",
+                            "Accept": "application/json",
+                            "username": BKASH_USERNAME,
+                            "password": BKASH_PASSWORD
+                        }
                     }
+                );
+
+                token = response.data.id_token;
+                const tokenGenerationTime = Date.now() - tokenStartTime;
+                console.log(`✅ [bKash Token] Generated in ${tokenGenerationTime}ms`);
+
+                // ✅ FIX: Don't wait for DB save, do it async
+                supabase.from('bkash_tokens').upsert({
+                    id: 1,
+                    auth_token: token,
+                    updated_at: new Date().toISOString()
+                }).catch(err => console.error("⚠️ [bKash Token] DB cache failed:", err.message));
+
+            } catch (tokenError) {
+                console.error("❌ [bKash Token] Generation failed:", tokenError.message);
+                
+                // ✅ FIX: Fallback - use expired token if available instead of failing completely
+                if (tokenData?.auth_token) {
+                    console.warn("⚠️ [bKash Token] Using expired cached token as fallback");
+                    token = tokenData.auth_token;
+                } else {
+                    return null;
                 }
-            );
-
-            token = response.data.id_token;
-
-            await supabase.from('bkash_tokens').upsert({
-                id: 1,
-                auth_token: token,
-                updated_at: new Date().toISOString()
-            });
-
-            console.log("bKash Token Generated & Cached");
+            }
         } else {
             token = tokenData.auth_token;
+            const tokenAge = Math.round((now - new Date(tokenData.updated_at).getTime()) / 1000);
+            console.log(`✅ [bKash Token] Using cached token (age: ${tokenAge}s)`);
         }
 
         return {
@@ -142,7 +159,7 @@ const getAuthHeaders = async () => {
             "Content-Type": "application/json"
         };
     } catch (error) {
-        console.error("bKash Auth Error:", error.response?.data || error.message);
+        console.error("❌ [bKash Auth] Unexpected error:", error.message);
         return null;
     }
 };
@@ -151,8 +168,18 @@ const getAuthHeaders = async () => {
 // --- Create Payment ---
 exports.createPayment = async (req, res) => {
     try {
+        const startTime = Date.now();
+        console.log("🔄 [bKash] Payment create initiated");
+        
         const headers = await getAuthHeaders();
-        if (!headers) return res.status(500).json({ error: "bKash Auth Failed." });
+        if (!headers) {
+            console.error("❌ [bKash] Auth failed - headers null");
+            return res.status(500).json({ error: "bKash Auth Failed. Please try again." });
+        }
+        
+        const tokenTime = Date.now() - startTime;
+        console.log(`✅ [bKash] Auth completed in ${tokenTime}ms`);
+        
         const merchantInvoiceNumber = "Inv_" + crypto.randomUUID().substring(0, 8);
 
         const { data } = await bkashAxios.post(`${process.env.BKASH_BASE_URL}/tokenized-checkout/payment/create`, {
@@ -166,16 +193,24 @@ exports.createPayment = async (req, res) => {
             merchantInvoiceNumber: merchantInvoiceNumber
         }, { headers });
 
+        console.log(`[bKash] Payment create response:`, {
+            statusCode: data?.statusCode,
+            hasURL: !!data?.bkashURL,
+            errorCode: data?.errorCode
+        });
+
         if (data.errorMessageEn || (data.statusCode && data.statusCode !== '0000')) {
             const code = data.statusCode || data.errorCode;
             const mappedError = getBkashErrorMessage(code);
             const finalError = mappedError || data.errorMessageEn || data.statusMessage || "Unknown Error";
+            console.error(`❌ [bKash] Payment creation error: ${finalError} (Code: ${code})`);
             return res.status(400).json({ error: finalError });
         }
 
+        console.log(`✅ [bKash] Payment created successfully. Total time: ${Date.now() - startTime}ms`);
         res.status(200).json({ bkashURL: data.bkashURL });
     } catch (error) {
-        console.error("Payment Creation Error:", error.message);
+        console.error("❌ [bKash] Payment Creation Error:", error.message);
         const responseData = error.response?.data;
         let finalError = "Payment creation failed";
 
@@ -183,6 +218,11 @@ exports.createPayment = async (req, res) => {
             const code = responseData.statusCode || responseData.errorCode;
             const mappedError = getBkashErrorMessage(code);
             finalError = mappedError || responseData.errorMessageEn || responseData.message || finalError;
+        }
+
+        if (error.code === 'ECONNABORTED') {
+            finalError = "Request timeout. bKash server is slow. Please try again.";
+            console.error("⏱️ [bKash] Timeout error:", finalError);
         }
 
         res.status(500).json({ error: finalError });
