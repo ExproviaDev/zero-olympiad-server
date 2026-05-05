@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require('cors');
+const rateLimit = require("express-rate-limit");
 const registrationRouter = require("./router/registrationRouter");
 const authRouter = require("./router/auth")
 const quizRouter = require('./router/quizRouter');
@@ -16,6 +17,26 @@ require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 4000;
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: "Too many requests from this IP, please try again later."
+});
+
+// Strict limit for sensitive operations
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5, // Only 5 login attempts per 15 minutes
+  message: "Too many login attempts, please try again later."
+});
+
+const otpLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 3, // Only 3 OTP requests per 5 minutes
+  message: "Too many OTP requests, please try again later."
+});
 
 const ALLOWED_ORIGINS = [
     'http://localhost:3000',     
@@ -40,6 +61,14 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.use(express.json());
+
+// Apply rate limiting
+app.use("/api/", limiter);
+
+// Specific limits for sensitive routes
+app.use("/api/auth/login", loginLimiter);
+app.use("/api/user/verify-otp", otpLimiter);
+app.use("/api/user/resend-otp", otpLimiter);
 
 app.use('/api/user', registrationRouter); 
 app.use('/api/auth', authRouter);

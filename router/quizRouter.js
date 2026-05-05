@@ -10,9 +10,11 @@ const {
     getSingleQuizForUser,
     submitQuiz,
     updateQuizStatus,
-    checkAttempt,    
+    checkAttempt,
+    getUserAttempts
  } = require('../controller/quizController');
 const { verifyAdmin } = require('../middleware/authMiddleware');
+const { verifyToken } = require('../middleware/authMiddleware');
 
 
 
@@ -25,8 +27,9 @@ router.patch('/update-quiz-status/:id', verifyAdmin, updateQuizStatus);
 
 
 router.get("/check-attempt/:userId/:quizId", checkAttempt);
+router.get('/user-attempts/:userId', verifyToken, getUserAttempts);
 router.get('/public-quizzes', getQuizzesForUsers);
 router.get('/public-quiz/:id', getSingleQuizForUser);
-router.post('/submit-quiz', submitQuiz);
+router.post('/submit-quiz', verifyToken, submitQuiz);
 
 module.exports = router;
