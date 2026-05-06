@@ -127,7 +127,9 @@ app.get("/", async (req, res)=>{
     res.send(x);
 })
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
+// Vercel runs this file as a serverless function: do not bind a listening port there.
+if (!process.env.VERCEL) {
+    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+}
 
 module.exports = app
