@@ -200,8 +200,8 @@ router.post('/register', async (req, res) => {
         if (assignedSDGNumber >= 1 && assignedSDGNumber <= 4) {
             // SDG 1-4: Activist
             sdgRole = "SDG Activist";
-            examDateEn = "7 May";
-            examDateBn = "৭ মে";
+            examDateEn = "14 May";
+            examDateBn = "১৪ মে";
             courseDetails = {
                 categoryName: "Class 5 to Class 8 (or equivalent) - (SDG 1 to SDG 4)",
                 courseName: "A Participant Guide of the UN Climate Change Process",
@@ -210,8 +210,8 @@ router.post('/register', async (req, res) => {
         } else if (assignedSDGNumber >= 5 && assignedSDGNumber <= 10) {
             // SDG 5-10: Ambassador
             sdgRole = "SDG Ambassador";
-            examDateEn = "8 May";
-            examDateBn = "৮ মে";
+            examDateEn = "15 May";
+            examDateBn = "১৫ মে";
             courseDetails = {
                 categoryName: "Class 9 to University Admission Candidate (or equivalent) - (SDG 5 to SDG 10)",
                 courseName: "Convention on Long-range Transboundary Air Pollution",
@@ -220,8 +220,8 @@ router.post('/register', async (req, res) => {
         } else if (assignedSDGNumber >= 11 && assignedSDGNumber <= 17) {
             // SDG 11-17: Achiever
             sdgRole = "SDG Achiever";
-            examDateEn = "9 May";
-            examDateBn = "৯ মে";
+            examDateEn = "16 May";
+            examDateBn = "১৬ মে";
             courseDetails = {
                 categoryName: "University & Diploma (or equivalent) - (SDG 11 to SDG 17)",
                 courseName: "Climate Change International Legal Regime",
