@@ -1,46 +1,5 @@
 const supabase = require("../config/db");
 
-async function getActiveSessionIdForUser(userId) {
-  const { data, error } = await supabase
-    .from("user_profiles")
-    .select("active_session_id")
-    .eq("user_id", userId)
-    .single();
-
-  if (error) return null;
-  return data?.active_session_id ?? null;
-}
-
-async function enforceSingleDeviceSession(req, res, userId) {
-  const sessionId = req.headers["x-session-id"];
-  if (!sessionId || typeof sessionId !== "string") {
-    return res.status(401).json({
-      success: false,
-      code: "SESSION_MISSING",
-      message: "Session missing. Please sign in again.",
-    });
-  }
-
-  const activeSessionId = await getActiveSessionIdForUser(userId);
-  if (!activeSessionId) {
-    return res.status(401).json({
-      success: false,
-      code: "SESSION_MISSING",
-      message: "Session not found. Please sign in again.",
-    });
-  }
-
-  if (String(activeSessionId) !== String(sessionId)) {
-    return res.status(401).json({
-      success: false,
-      code: "SESSION_CONFLICT",
-      message: "You are signed in on another device. Single-device login is enabled.",
-    });
-  }
-
-  return null;
-}
-
 async function getUserFromBearer(req) {
   const authHeader = req.headers.authorization;
   const token = authHeader && authHeader.split(" ")[1];
@@ -69,9 +28,6 @@ const verifyToken = async (req, res, next) => {
     const { user, error } = await getUserFromBearer(req);
     if (error) return res.status(401).json({ success: false, error });
 
-    const sessionErr = await enforceSingleDeviceSession(req, res, user.id);
-    if (sessionErr) return;
-
     // Attach a consistent shape similar to your previous JWT payload
     req.user = {
       sub: user.id,
@@ -88,9 +44,6 @@ const verifyAdmin = async (req, res, next) => {
   try {
     const { user, error } = await getUserFromBearer(req);
     if (error) return res.status(401).json({ success: false, error: "Unauthorized!" });
-
-    const sessionErr = await enforceSingleDeviceSession(req, res, user.id);
-    if (sessionErr) return;
 
     const role = await getRoleForUser(user.id);
     if (role !== "admin") {
@@ -113,9 +66,6 @@ const verifyStaff = async (req, res, next) => {
   try {
     const { user, error } = await getUserFromBearer(req);
     if (error) return res.status(401).json({ success: false, error: "Unauthorized!" });
-
-    const sessionErr = await enforceSingleDeviceSession(req, res, user.id);
-    if (sessionErr) return;
 
     const role = await getRoleForUser(user.id);
 

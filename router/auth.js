@@ -1,7 +1,6 @@
 const supabase = require("../config/db")
 const express = require('express');
 const router = express.Router();
-const crypto = require("crypto");
 
 router.use(express.json());
 // --- SDG Number Calculation Helper ---
@@ -45,18 +44,6 @@ router.post('/login', async (req, res) => {
         const t1 = Date.now();
         const token = authData?.session?.access_token;
         if (!token) return res.status(500).json({ message: "Login session token missing." });
-        const sessionId = crypto.randomUUID();
-
-        const { error: sessionError } = await supabase
-          .from("user_profiles")
-          .update({ active_session_id: sessionId, updated_at: new Date().toISOString() })
-          .eq("user_id", authData.user.id);
-
-        if (sessionError) {
-          console.error("[auth/login] session_update_failed", sessionError);
-          return res.status(500).json({ message: "Unable to start session." });
-        }
-
         const t2 = Date.now();
 
         // High-signal performance breadcrumbs (safe: no passwords).
@@ -68,7 +55,6 @@ router.post('/login', async (req, res) => {
         res.status(200).json({
             message: "Login successful!",
             token,
-            sessionId,
             user: {
                 id: authData.user.id,
                 email: authData.user.email,
@@ -79,61 +65,6 @@ router.post('/login', async (req, res) => {
         console.error("[auth/login] unhandled_error", err);
         res.status(500).json({ message: 'Internal server error occurred.' });
     }
-});
-
-router.post("/logout-all", async (req, res) => {
-  try {
-    const token = req.headers.authorization?.split(" ")[1];
-    if (!token) return res.status(401).json({ success: false, message: "No token provided" });
-
-    const { data: userData, error: userError } = await supabase.auth.getUser(token);
-    if (userError || !userData?.user) {
-      return res.status(401).json({ success: false, message: "Invalid token" });
-    }
-
-    const newSessionId = crypto.randomUUID();
-    const { error: sessionError } = await supabase
-      .from("user_profiles")
-      .update({ active_session_id: newSessionId, updated_at: new Date().toISOString() })
-      .eq("user_id", userData.user.id);
-
-    if (sessionError) {
-      return res.status(500).json({ success: false, message: "Failed to invalidate sessions" });
-    }
-
-    // Client should clear local token after this.
-    return res.status(200).json({ success: true, message: "Logged out from all devices." });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: "Internal server error" });
-  }
-});
-
-// Session bootstrap endpoint: returns the currently active session id for this user.
-// This is used when a client has a valid token but lost its local session_id.
-router.get("/session", async (req, res) => {
-  try {
-    const token = req.headers.authorization?.split(" ")[1];
-    if (!token) return res.status(401).json({ success: false, message: "No token provided" });
-
-    const { data: userData, error: userError } = await supabase.auth.getUser(token);
-    if (userError || !userData?.user) {
-      return res.status(401).json({ success: false, message: "Invalid token" });
-    }
-
-    const { data, error } = await supabase
-      .from("user_profiles")
-      .select("active_session_id")
-      .eq("user_id", userData.user.id)
-      .single();
-
-    if (error || !data?.active_session_id) {
-      return res.status(404).json({ success: false, message: "Session not found" });
-    }
-
-    return res.status(200).json({ success: true, sessionId: data.active_session_id });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: "Internal server error" });
-  }
 });
 
 router.get('/me', async (req, res) => {
