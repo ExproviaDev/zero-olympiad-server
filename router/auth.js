@@ -108,6 +108,34 @@ router.post("/logout-all", async (req, res) => {
   }
 });
 
+// Session bootstrap endpoint: returns the currently active session id for this user.
+// This is used when a client has a valid token but lost its local session_id.
+router.get("/session", async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) return res.status(401).json({ success: false, message: "No token provided" });
+
+    const { data: userData, error: userError } = await supabase.auth.getUser(token);
+    if (userError || !userData?.user) {
+      return res.status(401).json({ success: false, message: "Invalid token" });
+    }
+
+    const { data, error } = await supabase
+      .from("user_profiles")
+      .select("active_session_id")
+      .eq("user_id", userData.user.id)
+      .single();
+
+    if (error || !data?.active_session_id) {
+      return res.status(404).json({ success: false, message: "Session not found" });
+    }
+
+    return res.status(200).json({ success: true, sessionId: data.active_session_id });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: "Internal server error" });
+  }
+});
+
 router.get('/me', async (req, res) => {
     try {
         const token = req.headers.authorization?.split(' ')[1];
