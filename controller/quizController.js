@@ -215,8 +215,8 @@ const submitQuiz = async (req, res) => {
 
     } catch (error) {
         console.error("RPC Submission Error:", {
-            userId,
-            quizSetId,
+            user_id,
+            quiz_set_id,
             errorCode: error.code,
             errorMessage: error.message,
             timestamp: new Date()
