@@ -1,4 +1,3 @@
-const jwt = require("jsonwebtoken")
 const supabase = require("../config/db")
 const express = require('express');
 const router = express.Router();
@@ -36,28 +35,31 @@ router.post('/login', async (req, res) => {
     if (!email || !password) return res.status(400).json({ message: "Email and password are required." });
 
     try {
+        const t0 = Date.now();
         const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
         if (authError) return res.status(401).json({ message: authError.message });
-        const { data: profile, error: profileError } = await supabase
-            .from('user_profiles')
-            .select('*')
-            .eq('user_id', authData.user.id)
-            .single();
+        const t1 = Date.now();
+        const token = authData?.session?.access_token;
+        if (!token) return res.status(500).json({ message: "Login session token missing." });
+        const t2 = Date.now();
 
-        if (profileError || !profile) return res.status(404).json({ message: "Profile not found." });
-        const customToken = jwt.sign(
-            { sub: authData.user.id, role: profile.role, email: authData.user.email },
-            process.env.JWT_SECRET,
-            { expiresIn: '1d' }
-        );
+        // High-signal performance breadcrumbs (safe: no passwords).
+        console.log("[auth/login]", {
+            auth_ms: t1 - t0,
+            total_ms: t2 - t0,
+        });
 
         res.status(200).json({
             message: "Login successful!",
-            token: customToken,
-            user: profile
+            token,
+            user: {
+                id: authData.user.id,
+                email: authData.user.email,
+            }
         });
 
     } catch (err) {
+        console.error("[auth/login] unhandled_error", err);
         res.status(500).json({ message: 'Internal server error occurred.' });
     }
 });
@@ -67,11 +69,13 @@ router.get('/me', async (req, res) => {
         const token = req.headers.authorization?.split(' ')[1];
         if (!token) return res.status(401).json({ isAuthenticated: false });
 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const { data: userData, error: userError } = await supabase.auth.getUser(token);
+        if (userError || !userData?.user) return res.status(401).json({ isAuthenticated: false });
+
         const { data: profile, error: profileError } = await supabase
             .from('user_profiles')
             .select('*')
-            .eq('user_id', decoded.sub)
+            .eq('user_id', userData.user.id)
             .single();
 
         if (profileError) return res.status(404).json({ message: "Profile not found" });
@@ -93,8 +97,9 @@ router.put('/update-profile', async (req, res) => {
 
         if (!token) return res.status(401).json({ error: "No token provided" });
 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const userId = decoded.sub || decoded.user_id || decoded.id;
+        const { data: userData, error: userError } = await supabase.auth.getUser(token);
+        if (userError || !userData?.user) return res.status(401).json({ error: "Invalid token" });
+        const userId = userData.user.id;
 
         if (!userId) {
             return res.status(401).json({ error: "Unauthorized: User ID not found in token" });
