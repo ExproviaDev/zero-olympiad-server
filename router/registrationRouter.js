@@ -166,6 +166,11 @@ const calculateAssignedSDG = (level) => {
 
     return 0;
 };
+
+const isAdmissionCandidateLevel = (level) => {
+    const l = level ? level.trim() : "";
+    return l.includes("Admission Candidate") || l.includes("Musannif");
+};
 // --- ROUTES ---
 
 router.post('/register', async (req, res) => {
@@ -207,13 +212,13 @@ router.post('/register', async (req, res) => {
                 courseName: "A Participant Guide of the UN Climate Change Process",
                 courseLink: "https://unccelearn.org/course/view.php?id=174&page=overview"
             };
-        } else if (assignedSDGNumber >= 5 && assignedSDGNumber <= 10) {
+        } else if ((assignedSDGNumber >= 5 && assignedSDGNumber <= 10) || isAdmissionCandidateLevel(gradeLevel)) {
             // SDG 5-10: Ambassador
             sdgRole = "SDG Ambassador";
             examDateEn = "15 May";
             examDateBn = "১৫ মে";
             courseDetails = {
-                categoryName: "Class 9 to University Admission Candidate (or equivalent) - (SDG 5 to SDG 10)",
+                categoryName: "Class 9 to Varsity Admission Candidate (or equivalent)",
                 courseName: "Convention on Long-range Transboundary Air Pollution",
                 courseLink: "https://unccelearn.org/course/view.php?id=150&page=overview"
             };
@@ -223,7 +228,7 @@ router.post('/register', async (req, res) => {
             examDateEn = "16 May";
             examDateBn = "১৬ মে";
             courseDetails = {
-                categoryName: "University & Diploma (or equivalent) - (SDG 11 to SDG 17)",
+                categoryName: "Above (Bachelor, Diploma, Masters or equivalent) - (SDG 11 to SDG 17)",
                 courseName: "Climate Change International Legal Regime",
                 courseLink: "https://unccelearn.org/course/view.php?id=68&page=overview&lang=en"
             };
