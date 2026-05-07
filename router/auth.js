@@ -30,6 +30,11 @@ const calculateAssignedSDG = (level) => {
     return 0;
 };
 
+const isAdmissionCandidateLevel = (level) => {
+    const l = level ? level.trim() : "";
+    return l.includes("Admission Candidate") || l.includes("Musannif");
+};
+
 router.post('/login', async (req, res) => {
     const rawEmail = req.body?.email;
     const rawPassword = req.body?.password;
@@ -117,7 +122,7 @@ router.put('/update-profile', async (req, res) => {
 
             if (assignedSDGNumber >= 1 && assignedSDGNumber <= 4) {
                 sdgRole = "SDG Activist";
-            } else if (assignedSDGNumber >= 5 && assignedSDGNumber <= 10) {
+            } else if ((assignedSDGNumber >= 5 && assignedSDGNumber <= 10) || isAdmissionCandidateLevel(updates.grade_level)) {
                 sdgRole = "SDG Ambassador";
             } else if (assignedSDGNumber >= 11 && assignedSDGNumber <= 17) {
                 sdgRole = "SDG Achiever";
