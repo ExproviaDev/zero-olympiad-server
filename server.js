@@ -39,22 +39,11 @@ const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: Number(process.env.API_RATE_LIMIT_MAX || 1500),
   keyGenerator: getClientIp,
-  skip: (req) => req.method === "OPTIONS",
+  // Skip preflight and login (login is intentionally unlimited).
+  skip: (req) => req.method === "OPTIONS" || req.path === "/auth/login",
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: "Too many requests from this IP, please try again later." }
-});
-
-// Strict limit for sensitive operations
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: Number(process.env.LOGIN_RATE_LIMIT_MAX || 80),
-  keyGenerator: getClientIp,
-  skip: (req) => req.method === "OPTIONS",
-  skipSuccessfulRequests: true,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { message: "Too many login attempts, please try again later." }
 });
 
 const otpLimiter = rateLimit({
@@ -108,7 +97,6 @@ app.use(express.json());
 app.use("/api/", limiter);
 
 // Specific limits for sensitive routes
-app.use("/api/auth/login", loginLimiter);
 app.use("/api/user/verify-otp", otpLimiter);
 app.use("/api/user/resend-otp", otpLimiter);
 

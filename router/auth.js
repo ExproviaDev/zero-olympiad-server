@@ -49,21 +49,32 @@ router.post('/login', async (req, res) => {
         const t1 = Date.now();
         const token = authData?.session?.access_token;
         if (!token) return res.status(500).json({ message: "Login session token missing." });
+
+        const userId = authData.user.id;
+
+        // Inline full profile so the client doesn't need a second /api/auth/me round trip.
+        const { data: profile, error: profileError } = await supabase
+            .from('user_profiles')
+            .select('*')
+            .eq('user_id', userId)
+            .single();
         const t2 = Date.now();
 
-        // High-signal performance breadcrumbs (safe: no passwords).
+        const userPayload = profile && !profileError
+            ? profile
+            : { id: userId, email: authData.user.email };
+
         console.log("[auth/login]", {
             auth_ms: t1 - t0,
+            profile_ms: t2 - t1,
             total_ms: t2 - t0,
+            profile_hit: !!(profile && !profileError),
         });
 
         res.status(200).json({
             message: "Login successful!",
             token,
-            user: {
-                id: authData.user.id,
-                email: authData.user.email,
-            }
+            user: userPayload,
         });
 
     } catch (err) {
