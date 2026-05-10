@@ -162,13 +162,58 @@ const addMember = async (req, res) => {
 
 const getAllUsers = async (req, res) => {
   try {
-    const { data, error } = await supabase
+    const t0 = Date.now();
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
+    const search = req.query.search?.trim() || "";
+    const role = req.query.role?.trim() || "all";
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    if (search.length > 100) {
+      return res.status(400).json({ success: false, error: "Search query is too long." });
+    }
+
+    let query = supabase
       .from("user_profiles")
-      .select("*")
-      .order("created_at", { ascending: false });
+      .select(
+        "user_id, name, email, phone, district, institution, education_type, grade_level, role, is_blocked, created_at",
+        { count: "exact" }
+      );
+
+    if (search) {
+      const sanitized = search.replace(/[%_]/g, "\\$&");
+      query = query.or(`name.ilike.%${sanitized}%,email.ilike.%${sanitized}%,phone.ilike.%${sanitized}%`);
+    }
+
+    if (role !== "all") {
+      query = query.eq("role", role);
+    }
+
+    const { data, count, error } = await query
+      .order("created_at", { ascending: false })
+      .range(from, to);
 
     if (error) throw error;
-    res.status(200).json({ success: true, data });
+
+    console.log("[admin/all-users]", {
+      total_ms: Date.now() - t0,
+      page,
+      limit,
+      returned: data?.length || 0,
+      total: count || 0,
+      search: Boolean(search),
+      role,
+    });
+
+    res.status(200).json({
+      success: true,
+      data,
+      totalUsers: count || 0,
+      totalPages: Math.ceil((count || 0) / limit),
+      currentPage: page,
+      limit,
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
