@@ -143,30 +143,47 @@ const submitJuryScore = async (req, res) => {
 
 const getDashboardStats = async (req, res) => {
     try {
-        const { count: totalEnrolment, error: enrolmentError } = await supabase
-            .from('user_profiles')
-            .select('*', { count: 'exact', head: true });
+        const t0 = Date.now();
+
+        const [
+            enrolmentResult,
+            participantResult,
+            secondRoundResult,
+            finalistResult,
+            sdgResult
+        ] = await Promise.all([
+            supabase
+                .from('user_profiles')
+                .select('*', { count: 'exact', head: true }),
+            supabase
+                .from('user_profiles')
+                .select('*', { count: 'exact', head: true })
+                .eq('is_participated', true),
+            supabase
+                .from('round_2_selection')
+                .select('*', { count: 'exact', head: true }),
+            supabase
+                .from('round_2_selection')
+                .select('*', { count: 'exact', head: true })
+                .eq('status', 'selected'),
+            supabase.rpc('get_sdg_stats')
+        ]);
+
+        const { count: totalEnrolment, error: enrolmentError } = enrolmentResult;
         if (enrolmentError) throw enrolmentError;
 
-        const { count: totalParticipant, error: participantError } = await supabase
-            .from('user_profiles')
-            .select('*', { count: 'exact', head: true })
-            .eq('is_participated', true); // 🔥 নতুন কন্ডিশন
+        const { count: totalParticipant, error: participantError } = participantResult;
         if (participantError) throw participantError;
 
-        const { count: secondRoundCount, error: secondRoundError } = await supabase
-            .from('round_2_selection')
-            .select('*', { count: 'exact', head: true });
+        const { count: secondRoundCount, error: secondRoundError } = secondRoundResult;
         if (secondRoundError) throw secondRoundError;
 
-        const { count: finalistCount, error: finalistError } = await supabase
-            .from('round_2_selection')
-            .select('*', { count: 'exact', head: true })
-            .eq('status', 'selected');
+        const { count: finalistCount, error: finalistError } = finalistResult;
         if (finalistError) throw finalistError;
 
         let sdgStats = [];
-        const { data: rpcStats, error: sdgError } = await supabase.rpc('get_sdg_stats');
+        let usedSdgFallback = false;
+        const { data: rpcStats, error: sdgError } = sdgResult;
 
         if (!sdgError && Array.isArray(rpcStats)) {
             // RPC data may come as {sdg_number, registration_count} shape
@@ -176,6 +193,7 @@ const getDashboardStats = async (req, res) => {
             }));
         } else {
             // Fallback: compute SDG registrations from user_profiles
+            usedSdgFallback = true;
             console.warn("get_sdg_stats RPC unavailable, using fallback aggregation:", sdgError?.message);
             const { data: profileRows, error: profileAggError } = await supabase
                 .from('user_profiles')
@@ -202,6 +220,11 @@ const getDashboardStats = async (req, res) => {
                 registration_count: count
             }));
         }
+
+        console.log("[admin/dashboard-stats]", {
+            total_ms: Date.now() - t0,
+            sdg_fallback: usedSdgFallback,
+        });
 
         // ৩. রেসপন্স পাঠানো
         res.status(200).json({

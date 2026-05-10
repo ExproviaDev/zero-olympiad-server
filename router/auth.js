@@ -52,12 +52,45 @@ router.post('/login', async (req, res) => {
 
         const userId = authData.user.id;
 
-        // Inline full profile so the client doesn't need a second /api/auth/me round trip.
-        const { data: profile, error: profileError } = await supabase
+        // Lean payload: only the fields the homepage / Sidebar / authSlice need on first render.
+        // Heavier fields (phone, district, institution, education_type, etc.) are background-hydrated
+        // by the client via /api/auth/me right after navigation.
+        const LOGIN_PROFILE_COLUMNS = [
+            'user_id',
+            'name',
+            'email',
+            'role',
+            'sdg_role',
+            'current_level',
+            'grade_level',
+            'assigned_sdg_number',
+            'is_participated',
+            'profile_image_url',
+            'round_type',
+        ].join(', ');
+
+        let { data: profile, error: profileError } = await supabase
             .from('user_profiles')
-            .select('*')
+            .select(LOGIN_PROFILE_COLUMNS)
             .eq('user_id', userId)
             .single();
+
+        // Defensive fallback: if any column in the lean list doesn't exist in this
+        // environment's schema, retry once with select('*') so login is never silently
+        // broken. The lean error is logged so we can prune the column list.
+        if (profileError) {
+            console.warn("[auth/login] lean_select_failed", {
+                code: profileError.code,
+                message: profileError.message,
+            });
+            const fallback = await supabase
+                .from('user_profiles')
+                .select('*')
+                .eq('user_id', userId)
+                .single();
+            profile = fallback.data;
+            profileError = fallback.error;
+        }
         const t2 = Date.now();
 
         const userPayload = profile && !profileError
