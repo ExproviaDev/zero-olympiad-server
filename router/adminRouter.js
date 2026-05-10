@@ -9,7 +9,9 @@ const {
     getRound2Submissions, 
     submitJuryScore,
     getDashboardStats,
-    getMarketingUsers, getMarketingStats
+    getMarketingUsers, getMarketingStats,
+    searchParticipant,
+    resetParticipant,
 } = require("../controller/adminController");
 router.post("/add-member", verifyToken, verifyAdmin, addMember); //
 router.get("/all-users", verifyAdmin, getAllUsers);
@@ -24,6 +26,8 @@ router.get("/settings",verifyToken,  getCompetitionSettings);
 router.get("/round2-submissions", verifyToken, verifyStaff, getRound2Submissions);
 router.put("/submit-score", verifyToken, verifyStaff, submitJuryScore);
 router.get("/dashboard-stats", verifyStaff, getDashboardStats);
+router.get("/search-participant", verifyAdmin, searchParticipant);
+router.post("/reset-participant", verifyAdmin, resetParticipant);
 
 
 module.exports = router;

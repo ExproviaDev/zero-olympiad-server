@@ -325,8 +325,106 @@ const getMarketingStats = async (req, res) => {
         res.status(500).json({ success: false, error: err.message });
     }
 };
-// Obossoi eita router-e export kore add korben: 
-// router.get('/marketing-users', getMarketingUsers);
+// Search a participant by email — returns lean profile info for the reset UI
+const searchParticipant = async (req, res) => {
+    const { email } = req.query;
+    if (!email || typeof email !== 'string' || !email.trim()) {
+        return res.status(400).json({ success: false, error: 'Email is required.' });
+    }
+
+    try {
+        const { data: profile, error } = await supabase
+            .from('user_profiles')
+            .select('user_id, name, email, role, sdg_role, is_participated, round_type, assigned_sdg_number')
+            .ilike('email', email.trim())
+            .maybeSingle();
+
+        if (error) throw error;
+        if (!profile) return res.status(404).json({ success: false, error: 'No participant found with that email.' });
+
+        const { count: submissionCount } = await supabase
+            .from('quiz_submissions')
+            .select('id', { count: 'exact', head: true })
+            .eq('user_id', profile.user_id);
+
+        res.status(200).json({ success: true, data: { ...profile, submission_count: submissionCount || 0 } });
+    } catch (err) {
+        console.error('searchParticipant error:', err.message);
+        res.status(500).json({ success: false, error: err.message });
+    }
+};
+
+// Reset a participant's quiz data so they can retake the quiz.
+// Clears: quiz_submissions, resets is_participated + round_1_initial score.
+const resetParticipant = async (req, res) => {
+    const { user_id } = req.body;
+    if (!user_id) return res.status(400).json({ success: false, error: 'user_id is required.' });
+
+    try {
+        // Verify user exists before touching anything
+        const { data: profile, error: profileFetchError } = await supabase
+            .from('user_profiles')
+            .select('user_id, name, email')
+            .eq('user_id', user_id)
+            .single();
+
+        if (profileFetchError || !profile) {
+            return res.status(404).json({ success: false, error: 'Participant not found.' });
+        }
+
+        const errors = [];
+
+        // 1. Delete all quiz submissions for this user
+        const { error: subError } = await supabase
+            .from('quiz_submissions')
+            .delete()
+            .eq('user_id', user_id);
+        if (subError) errors.push(`quiz_submissions: ${subError.message}`);
+
+        // 2. Reset is_participated flag on user_profiles
+        const { error: profileError } = await supabase
+            .from('user_profiles')
+            .update({ is_participated: false })
+            .eq('user_id', user_id);
+        if (profileError) errors.push(`user_profiles: ${profileError.message}`);
+
+        // 3. Reset round_1_initial score/qualification
+        const { error: round1Error } = await supabase
+            .from('round_1_initial')
+            .update({ quiz_score: 0, is_qualified: false })
+            .eq('user_id', user_id);
+        // round_1_initial row might not exist for all users — treat as non-fatal
+        if (round1Error && round1Error.code !== 'PGRST116') {
+            errors.push(`round_1_initial: ${round1Error.message}`);
+        }
+
+        // 4. Delete from round_performances — this is what the leaderboard reads from.
+        // Without this step the user stays visible on the leaderboard even after reset.
+        const { error: rpError } = await supabase
+            .from('round_performances')
+            .delete()
+            .eq('user_id', user_id);
+        if (rpError) errors.push(`round_performances: ${rpError.message}`);
+
+        if (errors.length > 0) {
+            console.error('[resetParticipant] partial errors:', errors);
+            return res.status(500).json({
+                success: false,
+                error: `Reset partially failed: ${errors.join(' | ')}`,
+            });
+        }
+
+        console.log(`[resetParticipant] reset OK for user_id=${user_id} (${profile.email})`);
+        res.status(200).json({
+            success: true,
+            message: `Quiz data reset for ${profile.name} (${profile.email}). They can now retake the quiz.`,
+        });
+    } catch (err) {
+        console.error('resetParticipant error:', err.message);
+        res.status(500).json({ success: false, error: err.message });
+    }
+};
+
 module.exports = {
     getCompetitionSettings,
     updateCompetitionSettings,
@@ -334,5 +432,7 @@ module.exports = {
     submitJuryScore,
     getDashboardStats,
     getMarketingUsers,
-    getMarketingStats
+    getMarketingStats,
+    searchParticipant,
+    resetParticipant,
 };
