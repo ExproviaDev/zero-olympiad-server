@@ -44,18 +44,41 @@ const getAllQuizzes = async (req, res) => {
 };
 
 // ৩. কুইজ ডিলিট
+// round_performances.quiz_set_id এবং quiz_submissions.quiz_set_id এর FK
+// এখন ON DELETE SET NULL — তাই সেগুলো manual delete করার দরকার নেই।
+// Participant score/leaderboard data অক্ষুণ্ণ থাকবে।
+// শুধু questions manually clear করা হচ্ছে (CASCADE না থাকলেও safe)।
 const deleteQuiz = async (req, res) => {
     const { id } = req.params;
+    if (!id) {
+        return res.status(400).json({ success: false, error: "Missing quiz id" });
+    }
+
     try {
-        const { error } = await supabase
+        // 1) questions delete করা — quiz-এর প্রশ্ন সরিয়ে দেওয়া
+        const { error: qErr } = await supabase
+            .from('questions')
+            .delete()
+            .eq('quiz_set_id', id);
+        if (qErr) {
+            console.warn("[deleteQuiz] questions cleanup error", { quiz_set_id: id, error: qErr.message });
+        }
+
+        // 2) quiz_sets row delete — round_performances/quiz_submissions FK এখন SET NULL
+        //    তাই leaderboard/score data নষ্ট হবে না
+        const { error: setErr } = await supabase
             .from('quiz_sets')
             .delete()
             .eq('id', id);
+        if (setErr) throw setErr;
 
-        if (error) throw error;
-        res.status(200).json({ success: true, message: "Quiz deleted successfully!" });
+        return res.status(200).json({
+            success: true,
+            message: "Quiz deleted successfully!",
+        });
     } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
+        console.error("[deleteQuiz] failed", { quiz_set_id: id, message: error?.message });
+        return res.status(500).json({ success: false, error: error.message });
     }
 };
 
