@@ -1,20 +1,39 @@
 const supabase = require("../config/db");
 
-// ১. ভিডিও লিংক সাবমিট করা (Updated for Table per Round)
+// SDG number (1-17) → category name stored in round_performances.sdg_category
+const SDG_NAMES = [
+    "No Poverty",
+    "Zero Hunger",
+    "Good Health and Well-being",
+    "Quality Education",
+    "Gender Equality",
+    "Clean Water and Sanitation",
+    "Affordable and Clean Energy",
+    "Decent Work and Economic Growth",
+    "Industry, Innovation and Infrastructure",
+    "Reduced Inequalities",
+    "Sustainable Cities and Communities",
+    "Responsible Consumption and Production",
+    "Climate Action",
+    "Life Below Water",
+    "Life on Land",
+    "Peace, Justice and Strong Institutions",
+    "Partnerships for the Goals",
+];
+
+// ১. ভিডিও লিংক সাবমিট করা
 const submitVideoLink = async (req, res) => {
     try {
         const { userId, videoLink, roundNumber } = req.body;
         const roundNum = parseInt(roundNumber);
 
-        // লজিক: আমরা এখন স্পেসিফিক রাউন্ডের টেবিলে ভিডিও জমা নিব
         let table = '';
         if (roundNum === 2) table = 'round_2_selection';
-        else if (roundNum === 3) table = 'round_3_final'; // যদি রাউন্ড ৩ তে ভিডিও থাকে
+        else if (roundNum === 3) table = 'round_3_final';
         else {
             return res.status(400).json({ success: false, message: "Invalid round for video submission." });
         }
 
-        // চেক করা ইউজার ওই টেবিলে আদৌ আছে কি না (মানে সে প্রমোটেড কি না)
         const { data: userExists, error: checkError } = await supabase
             .from(table)
             .select('user_id, status')
@@ -25,12 +44,11 @@ const submitVideoLink = async (req, res) => {
             return res.status(403).json({ success: false, message: "You are not qualified for this round." });
         }
 
-        // ভিডিও লিংক আপডেট করা
         const { error: updateError } = await supabase
             .from(table)
             .update({
                 video_link: videoLink,
-                status: 'submitted', // স্ট্যাটাস চেঞ্জ
+                status: 'submitted',
                 updated_at: new Date()
             })
             .eq('user_id', userId);
@@ -44,7 +62,7 @@ const submitVideoLink = async (req, res) => {
     }
 };
 
-// ২. জাজ স্কোর আপডেট (Updated for Table per Round)
+// ২. জাজ স্কোর আপডেট
 const updateJudgeScore = async (req, res) => {
     try {
         const { userId, roundNumber, judgeScore } = req.body;
@@ -54,10 +72,6 @@ const updateJudgeScore = async (req, res) => {
         if (roundNum === 2) table = 'round_2_selection';
         else if (roundNum === 3) table = 'round_3_final';
         else return res.status(400).json({ message: "Invalid Round" });
-
-        // আগের স্কোর আনা (যদি লাগে টোটাল ক্যালকুলেশনের জন্য)
-        // Round 2 এর ক্ষেত্রে শুধু judge_score টাই মেইন, অথবা quiz_score এর সাথে যোগ হতে পারে।
-        // আপনার লজিক অনুযায়ী Round 2 তে jury_score আপডেট হবে।
 
         const { error } = await supabase
             .from(table)
@@ -77,59 +91,67 @@ const updateJudgeScore = async (req, res) => {
     }
 };
 
-// ৩. লিডারবোর্ড ভিউ (Dynamic Table Switching)
-// ৩. লিডারবোর্ড ভিউ (Dynamic Table Switching) - FIXED PAGINATION
+// ৩. লিডারবোর্ড ভিউ — sdgNumber param দিয়ে SDG-specific filter
 const getLeaderboard = async (req, res) => {
     try {
-        const { roundNumber, category, page = 1, limit = 50 } = req.query;
+        // sdgNumber: "all" or numeric string "1"–"17"
+        // category: legacy param (kept for backward compat)
+        const { roundNumber, sdgNumber, category, page = 1, limit = 50 } = req.query;
         const roundNum = parseInt(roundNumber);
-
-        // 🔥 FIX: String থেকে Integer এ কনভার্ট করা
         const pageInt = parseInt(page);
         const limitInt = parseInt(limit);
 
-        // Pagination Logic (এখন যোগফল সঠিক হবে)
+        // Resolve SDG number — prefer new sdgNumber param over legacy category
+        let sdgNum = null;
+        if (sdgNumber && sdgNumber !== "all") {
+            sdgNum = parseInt(sdgNumber);
+        } else if (category && category !== "All") {
+            const idx = SDG_NAMES.findIndex(
+                n => n.toLowerCase() === String(category).toLowerCase()
+            );
+            if (idx !== -1) sdgNum = idx + 1;
+        }
+
         const from = (pageInt - 1) * limitInt;
         const to = from + limitInt - 1;
 
         let query;
 
-        // 🔥 রাউন্ড অনুযায়ী টেবিল সুইচিং
         if (roundNum === 1) {
-            // Round 1: round_performances টেবিল
             query = supabase
                 .from('round_performances')
                 .select(`*, user_profiles!inner(name, profile_image_url, assigned_sdg_number)`, { count: 'exact' })
                 .eq('round_number', 1)
                 .order('quiz_score', { ascending: false })
                 .order('time_taken', { ascending: true });
+
+            // Filter by assigned_sdg_number via the joined user_profiles table
+            // This is reliable regardless of how sdg_category string is stored
+            if (sdgNum) {
+                query = query.eq('user_profiles.assigned_sdg_number', sdgNum);
+            }
         }
         else if (roundNum === 2) {
-            // Round 2: round_2_selection টেবিল
             query = supabase
                 .from('round_2_selection')
                 .select(`*, user_profiles!inner(name, profile_image_url, assigned_sdg_number)`, { count: 'exact' })
                 .order('jury_score', { ascending: false });
+
+            if (sdgNum) query = query.eq('assigned_sdg_number', sdgNum);
         }
         else if (roundNum === 3) {
-            // Round 3: round_3_final টেবিল
             query = supabase
                 .from('round_3_final')
                 .select(`*, user_profiles!inner(name, profile_image_url, assigned_sdg_number)`, { count: 'exact' })
                 .order('total_calculated_score', { ascending: false });
+
+            if (sdgNum) query = query.eq('user_profiles.assigned_sdg_number', sdgNum);
         }
 
-        // Category Filter (Common for all tables)
-        if (category && category !== "All") {
-            if (roundNum === 1) query = query.ilike('sdg_category', `%${category}%`);
-            else query = query.eq('assigned_sdg_number', parseInt(category.replace("SDG ", "")));
-        }
-
-        // রেঞ্জ দিয়ে ডাটা স্লাইস করা
         const { data, error, count } = await query.range(from, to);
 
         if (error) {
-            console.error("Fetch Error:", error);
+            console.error("[getLeaderboard] Fetch Error:", error);
             throw error;
         }
 
@@ -137,8 +159,8 @@ const getLeaderboard = async (req, res) => {
             success: true,
             data,
             total: count,
-            page: pageInt,  // আপডেটেড পেজ নম্বর পাঠানো
-            limit: limitInt // আপডেটেড লিমিট পাঠানো
+            page: pageInt,
+            limit: limitInt,
         });
 
     } catch (error) {
@@ -146,21 +168,25 @@ const getLeaderboard = async (req, res) => {
     }
 };
 
-// ৪. 🔥 AUTOMATIC PROMOTION SYSTEM (Handles Round 1 -> 2 AND Round 2 -> 3)
+// ৪. AUTOMATIC PROMOTION SYSTEM (Round 1 → 2, Round 2 → 3)
+// sdgNumber (optional): if provided, only promote for that specific SDG.
+//                       if omitted, promote all 17 SDGs.
 const promoteUsersByRanking = async (req, res) => {
-    const { limit, roundNumber } = req.body;
+    const { limit, roundNumber, sdgNumber } = req.body;
 
     try {
         const currentRound = parseInt(roundNumber);
         const nextRound = currentRound + 1;
         const limitNum = parseInt(limit);
 
+        // Determine which SDGs to process
+        const targetSdgNum = sdgNumber ? parseInt(sdgNumber) : null;
+        const sdgRange = targetSdgNum ? [targetSdgNum] : Array.from({ length: 17 }, (_, i) => i + 1);
+
         let totalPromotedCount = 0;
-        let promotionLog = [];
+        const promotionLog = [];
 
-        // ১ থেকে ১৭ পর্যন্ত লুপ (SDG 1 to 17)
-        for (let i = 1; i <= 17; i++) {
-
+        for (const i of sdgRange) {
             let topUsers = [];
 
             // CASE 1: Round 1 -> 2
@@ -174,12 +200,11 @@ const promoteUsersByRanking = async (req, res) => {
                     .order('time_taken', { ascending: true })
                     .limit(limitNum);
 
-                if (error) console.error(`Error SDG ${i}:`, error.message);
+                if (error) console.error(`[promote] SDG ${i} round 1 error:`, error.message);
                 topUsers = data || [];
             }
             // CASE 2: Round 2 -> 3
             else if (currentRound === 2) {
-                // সোর্স: round_2_selection
                 const { data, error } = await supabase
                     .from('round_2_selection')
                     .select(`
@@ -187,69 +212,78 @@ const promoteUsersByRanking = async (req, res) => {
                         user_profiles!inner(assigned_sdg_number)
                     `)
                     .eq('assigned_sdg_number', i)
-                    // .eq('status', 'evaluated') // আনকমেন্ট করতে পারেন যদি শুধু মার্ক করা খাতা নিতে চান
-                    .order('jury_score', { ascending: false })   // ১. জুরি মার্ক হাই
-                    .order('quiz_score', { ascending: false })   // ২. কুইজ মার্ক হাই
-                    .order('updated_at', { ascending: true })    // ৩. সাবমিশন টাইম আগে
-                    .limit(limitNum); // টপ ৩ জন
+                    .order('jury_score', { ascending: false })
+                    .order('quiz_score', { ascending: false })
+                    .order('updated_at', { ascending: true })
+                    .limit(limitNum);
 
-                if (error) console.error(`Error SDG ${i}:`, error.message);
+                if (error) console.error(`[promote] SDG ${i} round 2 error:`, error.message);
                 topUsers = data || [];
             }
 
-            // COMMON ACTION
-            if (topUsers.length > 0) {
-                const qualifiedIds = topUsers.map(u => u.user_id);
-
-                // Update Old Table Status
-                if (currentRound === 1) {
-                    await supabase.from('round_performances').update({ is_promoted: true }).in('user_id', qualifiedIds).eq('round_number', 1);
-                } else if (currentRound === 2) {
-                    await supabase.from('round_2_selection').update({ is_finalist: true, status: 'selected' }).in('user_id', qualifiedIds);
-                }
-
-                // Insert into New Table
-                if (nextRound === 2) {
-                    const round2Entries = topUsers.map(user => ({
-                        user_id: user.user_id,
-                        assigned_sdg_number: i,
-                        quiz_score: user.quiz_score,
-                        status: 'pending',
-                        video_link: null,
-                        jury_score: 0,
-                        is_finalist: false
-                    }));
-                    await supabase.from('round_2_selection').upsert(round2Entries, { onConflict: 'user_id' });
-                }
-                else if (nextRound === 3) {
-                    const round3Entries = topUsers.map((user, index) => ({
-                        user_id: user.user_id,
-                        total_calculated_score: user.jury_score || 0,
-                        rank: index + 1,
-                        presentation_score: 0
-                    }));
-                    await supabase.from('round_3_final').upsert(round3Entries, { onConflict: 'user_id' });
-                }
-
-                // Update User Profile
-                await supabase
-                    .from('user_profiles')
-                    .update({ round_type: `round_${nextRound}` })
-                    .in('user_id', qualifiedIds);
-
-                totalPromotedCount += qualifiedIds.length;
-                promotionLog.push(`SDG ${i}: ${qualifiedIds.length} -> Round ${nextRound}`);
+            if (topUsers.length === 0) {
+                promotionLog.push(`SDG ${i}: 0 users (skipped)`);
+                continue;
             }
+
+            const qualifiedIds = topUsers.map(u => u.user_id);
+
+            // Mark promoted in source table
+            if (currentRound === 1) {
+                await supabase
+                    .from('round_performances')
+                    .update({ is_promoted: true })
+                    .in('user_id', qualifiedIds)
+                    .eq('round_number', 1);
+            } else if (currentRound === 2) {
+                await supabase
+                    .from('round_2_selection')
+                    .update({ is_finalist: true, status: 'selected' })
+                    .in('user_id', qualifiedIds);
+            }
+
+            // Insert into destination table
+            if (nextRound === 2) {
+                const round2Entries = topUsers.map(user => ({
+                    user_id: user.user_id,
+                    assigned_sdg_number: i,
+                    quiz_score: user.quiz_score,
+                    status: 'pending',
+                    video_link: null,
+                    jury_score: 0,
+                    is_finalist: false,
+                }));
+                await supabase.from('round_2_selection').upsert(round2Entries, { onConflict: 'user_id' });
+            }
+            else if (nextRound === 3) {
+                const round3Entries = topUsers.map((user, index) => ({
+                    user_id: user.user_id,
+                    total_calculated_score: user.jury_score || 0,
+                    rank: index + 1,
+                    presentation_score: 0,
+                }));
+                await supabase.from('round_3_final').upsert(round3Entries, { onConflict: 'user_id' });
+            }
+
+            // Update user_profiles round_type
+            await supabase
+                .from('user_profiles')
+                .update({ round_type: `round_${nextRound}` })
+                .in('user_id', qualifiedIds);
+
+            totalPromotedCount += qualifiedIds.length;
+            promotionLog.push(`SDG ${i}: ${qualifiedIds.length} promoted → Round ${nextRound}`);
         }
 
+        const scope = targetSdgNum ? `SDG ${targetSdgNum}` : "All SDGs";
         res.status(200).json({
             success: true,
-            message: `Success! Promoted ${totalPromotedCount} users to Round ${nextRound}.`,
-            details: promotionLog
+            message: `Success! Promoted ${totalPromotedCount} users from ${scope} to Round ${nextRound}.`,
+            details: promotionLog,
         });
 
     } catch (error) {
-        console.error(error);
+        console.error("[promoteUsersByRanking]", error);
         res.status(500).json({ success: false, error: error.message });
     }
 };
@@ -258,5 +292,5 @@ module.exports = {
     submitVideoLink,
     updateJudgeScore,
     getLeaderboard,
-    promoteUsersByRanking
+    promoteUsersByRanking,
 };
