@@ -1,4 +1,4 @@
-name: Deploy to ECR and ECS
+name: Deploy to ECR
 
 on:
   push:
@@ -7,6 +7,7 @@ on:
 env:
   AWS_REGION: ap-southeast-1
   ECR_REPOSITORY: zero-olympiad-backend
+  AWS_ACCOUNT_ID: 438777519548
 
 jobs:
   deploy:
@@ -28,8 +29,8 @@ jobs:
     
     - name: Build, tag, and push image to Amazon ECR
       env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        IMAGE_TAG: ${{ github.sha }}
+        ECR_REGISTRY: ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+        IMAGE_TAG: latest
       run: |
-        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
