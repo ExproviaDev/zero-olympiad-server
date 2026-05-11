@@ -6,7 +6,7 @@ on:
 
 env:
   AWS_REGION: ap-southeast-1
-  ECR_REPOSITORY: zero-olympiad-backend
+  ECR_REPOSITORY: zero-olympiad-server
   AWS_ACCOUNT_ID: 438777519548
 
 jobs:
