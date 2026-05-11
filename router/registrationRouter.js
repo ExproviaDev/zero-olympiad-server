@@ -1,5 +1,6 @@
 const express = require('express');
 const supabase = require('../config/db');
+const sql = require('../config/pg');
 const router = express.Router();
 const sgMail = require('@sendgrid/mail');
 
@@ -180,15 +181,25 @@ router.post('/register', async (req, res) => {
     } = req.body;
 
     try {
-        // ১. পেমেন্ট ভেরিফিকেশন চেক
-        const { data: paymentRecord, error: pError } = await supabase
-            .from('payment_verifications')
-            .select('*')
-            .eq('verification_token', paymentToken)
-            .eq('status', 'completed')
-            .single();
+        let paymentRecord = null;
+        if (sql) {
+            const rows = await sql`
+                SELECT * FROM payment_verifications
+                WHERE verification_token = ${paymentToken} AND status = 'completed'
+                LIMIT 1
+            `;
+            paymentRecord = rows[0] ?? null;
+        } else {
+            const { data, error: pError } = await supabase
+                .from('payment_verifications')
+                .select('*')
+                .eq('verification_token', paymentToken)
+                .eq('status', 'completed')
+                .single();
+            if (!pError) paymentRecord = data;
+        }
 
-        if (pError || !paymentRecord) {
+        if (!paymentRecord) {
             return res.status(400).json({
                 message: "Payment verification failed. Please complete payment first."
             });
@@ -248,38 +259,65 @@ router.post('/register', async (req, res) => {
         const newUserId = authData?.user?.id;
         if (!newUserId) return res.status(400).json({ message: "User creation failed." });
 
-        // ৪. প্রোফাইল ডাটাবেসে সেভ করা
-        const { error: profileError } = await supabase.from('user_profiles').insert([{
-            user_id: newUserId,
-            name, email, phone, district, institution,
-            education_type: educationType,
-            grade_level: gradeLevel,
-            current_level: gradeLevel,
-            promo_code: promoCode || null, // ✅ Promo Code Added
-            sdg_role: sdgRole,
-            assigned_sdg_number: assignedSDGNumber,
-            round_type: "initial round_1",
-            role: role || "user",
-            payment_verify_token: paymentToken,
-            signup_source: signup_source || 'organic'
-        }]);
+        if (sql) {
+            await sql`
+                INSERT INTO user_profiles (
+                    user_id, name, email, phone, district, institution,
+                    education_type, grade_level, current_level, promo_code,
+                    sdg_role, assigned_sdg_number, round_type, role,
+                    payment_verify_token, signup_source
+                ) VALUES (
+                    ${newUserId}, ${name}, ${email}, ${phone}, ${district}, ${institution},
+                    ${educationType}, ${gradeLevel}, ${gradeLevel}, ${promoCode || null},
+                    ${sdgRole}, ${assignedSDGNumber}, 'initial round_1', ${role || "user"},
+                    ${paymentToken}, ${signup_source || 'organic'}
+                )
+            `;
+        } else {
+            const { error: profileError } = await supabase.from('user_profiles').insert([{
+                user_id: newUserId,
+                name, email, phone, district, institution,
+                education_type: educationType,
+                grade_level: gradeLevel,
+                current_level: gradeLevel,
+                promo_code: promoCode || null,
+                sdg_role: sdgRole,
+                assigned_sdg_number: assignedSDGNumber,
+                round_type: "initial round_1",
+                role: role || "user",
+                payment_verify_token: paymentToken,
+                signup_source: signup_source || 'organic'
+            }]);
 
-        if (profileError) throw profileError;
+            if (profileError) throw profileError;
+        }
         // ============================================================
         // 🔥 NEW INTEGRATION: AMBASSADOR & REFERRAL LOGIC
         // ============================================================
 
         // ক. ইউজার যদি অ্যাম্বাসেডর হিসেবে জয়েন করে
         if (role === 'ambassador' && myPromoCode) {
-            await supabase.from('ambassador_profiles').insert([{
-                user_id: newUserId,
-                promo_code: myPromoCode.toUpperCase(),
-                total_referrals: 0
-            }]);
+            if (sql) {
+                await sql`
+                    INSERT INTO ambassador_profiles (user_id, promo_code, total_referrals)
+                    VALUES (${newUserId}, ${myPromoCode.toUpperCase()}, 0)
+                `;
+            } else {
+                await supabase.from('ambassador_profiles').insert([{
+                    user_id: newUserId,
+                    promo_code: myPromoCode.toUpperCase(),
+                    total_referrals: 0
+                }]);
+            }
         }
 
-        // খ. যদি কোনো কনটেস্টর অন্য কারো প্রোমো কোড ব্যবহার করে থাকে
-        if (promoCode) {
+        if (promoCode && sql) {
+            await sql`
+                UPDATE ambassador_profiles
+                SET total_referrals = COALESCE(total_referrals, 0) + 1
+                WHERE promo_code = ${promoCode.toUpperCase()}
+            `;
+        } else if (promoCode) {
             // ওই প্রোমো কোডটি কোন অ্যাম্বাসেডরের তা খুঁজে বের করা
             const { data: ambassadorData } = await supabase
                 .from('ambassador_profiles')
@@ -297,11 +335,20 @@ router.post('/register', async (req, res) => {
         }
         // ============================================================
 
-        // ৫. রাউন্ড ১ এন্ট্রি
-        await supabase.from('round_1_initial').insert([{ user_id: newUserId, quiz_score: 0, is_qualified: false }]);
-
-        // ৬. পেমেন্ট টোকেন আপডেট (Used)
-        await supabase.from('payment_verifications').update({ status: 'used' }).eq('verification_token', paymentToken);
+        if (sql) {
+            await sql`
+                INSERT INTO round_1_initial (user_id, quiz_score, is_qualified)
+                VALUES (${newUserId}, 0, false)
+            `;
+            await sql`
+                UPDATE payment_verifications
+                SET status = 'used'
+                WHERE verification_token = ${paymentToken}
+            `;
+        } else {
+            await supabase.from('round_1_initial').insert([{ user_id: newUserId, quiz_score: 0, is_qualified: false }]);
+            await supabase.from('payment_verifications').update({ status: 'used' }).eq('verification_token', paymentToken);
+        }
 
         // ৭. ইমেইল পাঠানো
         // await sendWelcomeEmail(email, name, courseDetails, examDateEn, examDateBn);

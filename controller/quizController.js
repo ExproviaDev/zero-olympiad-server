@@ -1,9 +1,30 @@
 const supabase = require('../config/db');
+const sql = require('../config/pg');
 
 const createFullQuiz = async (req, res) => {
     const { title, category, start_at, ends_at, time_limit, questions } = req.body;
 
     try {
+        if (sql) {
+            const inserted = await sql`
+                INSERT INTO quiz_sets (title, category, start_at, ends_at, time_limit, status)
+                VALUES (${title}, ${category}, ${start_at}, ${ends_at}, ${time_limit}, 'draft')
+                RETURNING id
+            `;
+            const quizSetId = inserted[0].id;
+
+            if (questions?.length) {
+                const rows = questions.map((q) => ({
+                    quiz_set_id: quizSetId,
+                    question_text: q.question_text,
+                    options: { A: q.optionA, B: q.optionB, C: q.optionC, D: q.optionD },
+                    correct_answer: q.correct_answer,
+                }));
+                await sql`INSERT INTO questions ${sql(rows, 'quiz_set_id', 'question_text', 'options', 'correct_answer')}`;
+            }
+            return res.status(201).json({ success: true, message: "Quiz Set Created Successfully as Draft!" });
+        }
+
         const { data: quizSet, error: setEror } = await supabase
             .from('quiz_sets')
             .insert([{ title, category, start_at, ends_at, time_limit, status: 'draft' }]) // status: draft যোগ করা হয়েছে
@@ -31,6 +52,19 @@ const createFullQuiz = async (req, res) => {
 // ২. এডমিনের জন্য সব কুইজ (Draft + Published সব দেখা যাবে)
 const getAllQuizzes = async (req, res) => {
     try {
+        if (sql) {
+            const rows = await sql`
+                SELECT
+                    qs.*,
+                    json_build_array(
+                        json_build_object('count', (SELECT COUNT(*) FROM questions q WHERE q.quiz_set_id = qs.id))
+                    ) AS questions
+                FROM quiz_sets qs
+                ORDER BY qs.created_at DESC
+            `;
+            return res.status(200).json({ success: true, data: rows });
+        }
+
         const { data, error } = await supabase
             .from('quiz_sets')
             .select('*, questions(count)')
@@ -55,7 +89,14 @@ const deleteQuiz = async (req, res) => {
     }
 
     try {
-        // 1) questions delete করা — quiz-এর প্রশ্ন সরিয়ে দেওয়া
+        if (sql) {
+            try { await sql`DELETE FROM questions WHERE quiz_set_id = ${id}`; }
+            catch (e) { console.warn("[deleteQuiz] questions cleanup error", { quiz_set_id: id, error: e.message }); }
+
+            await sql`DELETE FROM quiz_sets WHERE id = ${id}`;
+            return res.status(200).json({ success: true, message: "Quiz deleted successfully!" });
+        }
+
         const { error: qErr } = await supabase
             .from('questions')
             .delete()
@@ -88,6 +129,27 @@ const updateQuiz = async (req, res) => {
     const { title, category, start_at, ends_at, time_limit, questions } = req.body;
 
     try {
+        if (sql) {
+            await sql`
+                UPDATE quiz_sets
+                SET title = ${title}, category = ${category},
+                    start_at = ${start_at}, ends_at = ${ends_at}, time_limit = ${time_limit}
+                WHERE id = ${id}
+            `;
+            await sql`DELETE FROM questions WHERE quiz_set_id = ${id}`;
+
+            if (questions?.length) {
+                const rows = questions.map((q) => ({
+                    quiz_set_id: id,
+                    question_text: q.question_text,
+                    options: { A: q.optionA, B: q.optionB, C: q.optionC, D: q.optionD },
+                    correct_answer: q.correct_answer,
+                }));
+                await sql`INSERT INTO questions ${sql(rows, 'quiz_set_id', 'question_text', 'options', 'correct_answer')}`;
+            }
+            return res.status(200).json({ success: true, message: "Quiz updated successfully!" });
+        }
+
         const { error: updateSetError } = await supabase
             .from('quiz_sets')
             .update({ title, category, start_at, ends_at, time_limit })
@@ -125,6 +187,22 @@ const updateQuiz = async (req, res) => {
 const getSingleQuiz = async (req, res) => {
     const { id } = req.params;
     try {
+        if (sql) {
+            const rows = await sql`
+                SELECT
+                    qs.*,
+                    COALESCE(
+                        (SELECT json_agg(q.* ORDER BY q.id) FROM questions q WHERE q.quiz_set_id = qs.id),
+                        '[]'::json
+                    ) AS questions
+                FROM quiz_sets qs
+                WHERE qs.id = ${id}
+                LIMIT 1
+            `;
+            if (!rows[0]) return res.status(404).json({ success: false, message: "Quiz not found" });
+            return res.status(200).json({ success: true, data: rows[0] });
+        }
+
         const { data, error } = await supabase
             .from('quiz_sets')
             .select(`*, questions (*)`)
@@ -145,6 +223,41 @@ const getQuizzesForUsers = async (req, res) => {
     try {
         const { category } = req.query;
 
+        if (sql) {
+            // Nested questions are aggregated as JSON to match the Supabase JS
+            // response shape exactly. COALESCE handles quizzes with zero questions.
+            const rows = await sql`
+                SELECT
+                    qs.id,
+                    qs.title,
+                    qs.category,
+                    qs.time_limit,
+                    qs.start_at,
+                    qs.ends_at,
+                    COALESCE(
+                        (
+                            SELECT json_agg(
+                                json_build_object(
+                                    'id', q.id,
+                                    'quiz_set_id', q.quiz_set_id,
+                                    'question_text', q.question_text,
+                                    'options', q.options
+                                )
+                                ORDER BY q.id
+                            )
+                            FROM questions q
+                            WHERE q.quiz_set_id = qs.id
+                        ),
+                        '[]'::json
+                    ) AS questions
+                FROM quiz_sets qs
+                WHERE qs.status = 'published'
+                  AND (${category ?? null}::text IS NULL OR qs.category = ${category ?? null})
+                ORDER BY qs.created_at DESC
+            `;
+            return res.status(200).json({ success: true, data: rows });
+        }
+
         let query = supabase
             .from('quiz_sets')
             .select(`
@@ -156,7 +269,7 @@ const getQuizzesForUsers = async (req, res) => {
                 ends_at,
                 questions (id, quiz_set_id, question_text, options)
             `)
-            .eq('status', 'published'); // <--- Filter added
+            .eq('status', 'published');
 
         if (category) {
             query = query.eq('category', category);
@@ -170,9 +283,47 @@ const getQuizzesForUsers = async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 };
+
 const getSingleQuizForUser = async (req, res) => {
     try {
         const { id } = req.params;
+
+        if (sql) {
+            const rows = await sql`
+                SELECT
+                    qs.id,
+                    qs.title,
+                    qs.category,
+                    qs.time_limit,
+                    qs.start_at,
+                    COALESCE(
+                        (
+                            SELECT json_agg(
+                                json_build_object(
+                                    'id', q.id,
+                                    'quiz_set_id', q.quiz_set_id,
+                                    'question_text', q.question_text,
+                                    'options', q.options
+                                )
+                                ORDER BY q.id
+                            )
+                            FROM questions q
+                            WHERE q.quiz_set_id = qs.id
+                        ),
+                        '[]'::json
+                    ) AS questions
+                FROM quiz_sets qs
+                WHERE qs.id = ${id}
+                  AND qs.status = 'published'
+                LIMIT 1
+            `;
+
+            if (!rows[0]) {
+                return res.status(404).json({ success: false, message: 'Quiz not found or not published' });
+            }
+            return res.status(200).json({ success: true, data: rows[0] });
+        }
+
         const { data, error } = await supabase
             .from('quiz_sets')
             .select(`
@@ -200,13 +351,19 @@ const submitQuiz = async (req, res) => {
     }
 
     try {
-        // ১. সঠিক উত্তর বের করে স্কোর ক্যালকুলেশন (এটি আগের মতোই থাকবে)
-        const { data: correctQuestions, error: fetchError } = await supabase
-            .from('questions')
-            .select('id, correct_answer')
-            .eq('quiz_set_id', quiz_set_id);
-
-        if (fetchError) throw fetchError;
+        let correctQuestions;
+        if (sql) {
+            correctQuestions = await sql`
+                SELECT id, correct_answer FROM questions WHERE quiz_set_id = ${quiz_set_id}
+            `;
+        } else {
+            const { data, error: fetchError } = await supabase
+                .from('questions')
+                .select('id, correct_answer')
+                .eq('quiz_set_id', quiz_set_id);
+            if (fetchError) throw fetchError;
+            correctQuestions = data;
+        }
 
         let calculatedScore = 0;
         const userAnswers = answers || {};
@@ -259,6 +416,13 @@ const updateQuizStatus = async (req, res) => {
     const { status } = req.body;
 
     try {
+        if (sql) {
+            const rows = await sql`
+                UPDATE quiz_sets SET status = ${status} WHERE id = ${id} RETURNING *
+            `;
+            return res.status(200).json({ success: true, message: "Status updated successfully", data: rows[0] });
+        }
+
         const { data, error } = await supabase
             .from('quiz_sets')
             .update({ status })
@@ -276,6 +440,17 @@ const updateQuizStatus = async (req, res) => {
 const checkAttempt = async (req, res) => {
     try {
         const { userId, quizId } = req.params;
+
+        if (sql) {
+            const rows = await sql`
+                SELECT id
+                FROM quiz_submissions
+                WHERE user_id = ${userId} AND quiz_set_id = ${quizId}
+                LIMIT 1
+            `;
+            return res.status(200).json({ hasAttempted: rows.length > 0 });
+        }
+
         const { data: existingSubmission, error } = await supabase
             .from('quiz_submissions')
             .select('id')
@@ -294,6 +469,16 @@ const checkAttempt = async (req, res) => {
 const getUserAttempts = async (req, res) => {
     try {
         const { userId } = req.params;
+
+        if (sql) {
+            const rows = await sql`
+                SELECT quiz_set_id
+                FROM quiz_submissions
+                WHERE user_id = ${userId}
+            `;
+            return res.status(200).json({ attempts: rows.map((a) => a.quiz_set_id) });
+        }
+
         const { data: attempts, error } = await supabase
             .from('quiz_submissions')
             .select('quiz_set_id')

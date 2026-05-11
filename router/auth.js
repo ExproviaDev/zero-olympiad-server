@@ -1,4 +1,5 @@
 const supabase = require("../config/db")
+const sql = require("../config/pg")
 const express = require('express');
 const router = express.Router();
 
@@ -69,27 +70,62 @@ router.post('/login', async (req, res) => {
             'round_type',
         ].join(', ');
 
-        let { data: profile, error: profileError } = await supabase
-            .from('user_profiles')
-            .select(LOGIN_PROFILE_COLUMNS)
-            .eq('user_id', userId)
-            .single();
+        let profile = null;
+        let profileError = null;
 
-        // Defensive fallback: if any column in the lean list doesn't exist in this
-        // environment's schema, retry once with select('*') so login is never silently
-        // broken. The lean error is logged so we can prune the column list.
-        if (profileError) {
-            console.warn("[auth/login] lean_select_failed", {
-                code: profileError.code,
-                message: profileError.message,
-            });
-            const fallback = await supabase
+        if (sql) {
+            try {
+                const rows = await sql`
+                    SELECT
+                        user_id, name, email, role, sdg_role, current_level,
+                        grade_level, assigned_sdg_number, is_participated,
+                        profile_image_url, round_type
+                    FROM user_profiles
+                    WHERE user_id = ${userId}
+                    LIMIT 1
+                `;
+                profile = rows[0] ?? null;
+                if (!profile) {
+                    profileError = { code: 'PGRST116', message: 'Profile not found' };
+                }
+            } catch (e) {
+                console.warn('[auth/login] pg_lean_select_failed', { message: e.message });
+                profileError = e;
+            }
+
+            if (!profile) {
+                try {
+                    const rows = await sql`
+                        SELECT * FROM user_profiles WHERE user_id = ${userId} LIMIT 1
+                    `;
+                    profile = rows[0] ?? null;
+                    profileError = profile ? null : profileError;
+                } catch (e) {
+                    profileError = e;
+                }
+            }
+        } else {
+            const lean = await supabase
                 .from('user_profiles')
-                .select('*')
+                .select(LOGIN_PROFILE_COLUMNS)
                 .eq('user_id', userId)
                 .single();
-            profile = fallback.data;
-            profileError = fallback.error;
+            profile = lean.data;
+            profileError = lean.error;
+
+            if (profileError) {
+                console.warn("[auth/login] lean_select_failed", {
+                    code: profileError.code,
+                    message: profileError.message,
+                });
+                const fallback = await supabase
+                    .from('user_profiles')
+                    .select('*')
+                    .eq('user_id', userId)
+                    .single();
+                profile = fallback.data;
+                profileError = fallback.error;
+            }
         }
         const t2 = Date.now();
 
@@ -124,10 +160,23 @@ router.get('/me', async (req, res) => {
         const { data: userData, error: userError } = await supabase.auth.getUser(token);
         if (userError || !userData?.user) return res.status(401).json({ isAuthenticated: false });
 
+        const userId = userData.user.id;
+
+        if (sql) {
+            const rows = await sql`
+                SELECT *
+                FROM user_profiles
+                WHERE user_id = ${userId}
+                LIMIT 1
+            `;
+            if (!rows[0]) return res.status(404).json({ message: 'Profile not found' });
+            return res.status(200).json({ isAuthenticated: true, user: rows[0] });
+        }
+
         const { data: profile, error: profileError } = await supabase
             .from('user_profiles')
             .select('*')
-            .eq('user_id', userData.user.id)
+            .eq('user_id', userId)
             .single();
 
         if (profileError) return res.status(404).json({ message: "Profile not found" });
@@ -182,7 +231,19 @@ router.put('/update-profile', async (req, res) => {
         delete updates.user_id;
         delete updates.id;
 
-        // ৩. ডাটাবেস আপডেট
+        if (sql) {
+            const keys = Object.keys(updates);
+            if (keys.length === 0) {
+                return res.json({ message: "Profile updated successfully", user: null });
+            }
+            const rows = await sql`
+                UPDATE user_profiles SET ${sql(updates, ...keys)}
+                WHERE user_id = ${userId}
+                RETURNING *
+            `;
+            return res.json({ message: "Profile updated successfully", user: rows[0] });
+        }
+
         const { data, error } = await supabase
             .from('user_profiles')
             .update(updates)

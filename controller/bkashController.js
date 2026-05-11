@@ -1,5 +1,6 @@
 const axios = require('axios');
 const supabase = require('../config/db');
+const sql = require('../config/pg');
 const crypto = require('crypto');
 
 // bKash Spec অনুযায়ী 30s timeout
@@ -95,11 +96,25 @@ const getAuthHeaders = async ({ forceRefresh = false } = {}) => {
             return null;
         }
 
-        const { data: tokenData } = await supabase
-            .from('bkash_tokens')
-            .select('auth_token, updated_at')
-            .eq('id', 1)
-            .maybeSingle();
+        let tokenData = null;
+        if (sql) {
+            try {
+                const rows = await sql`
+                    SELECT auth_token, updated_at FROM bkash_tokens WHERE id = 1 LIMIT 1
+                `;
+                tokenData = rows[0] ?? null;
+            } catch (e) {
+                console.warn('[bKash Token] pg read failed, falling back:', e.message);
+            }
+        }
+        if (!tokenData) {
+            const { data } = await supabase
+                .from('bkash_tokens')
+                .select('auth_token, updated_at')
+                .eq('id', 1)
+                .maybeSingle();
+            tokenData = data ?? null;
+        }
 
         let token;
         const now = Date.now();
@@ -134,25 +149,32 @@ const getAuthHeaders = async ({ forceRefresh = false } = {}) => {
                 const tokenGenerationTime = Date.now() - tokenStartTime;
                 console.log(`✅ [bKash Token] Generated in ${tokenGenerationTime}ms`);
 
-                // ✅ Don't block on DB cache write (and don't throw if it fails)
-                // Note: Supabase query builder isn't a native Promise (may not have .catch),
-                // so use .then(...) safely.
-                supabase
-                    .from('bkash_tokens')
-                    .upsert({
-                        id: 1,
-                        auth_token: token,
-                        updated_at: new Date().toISOString()
-                    })
-                    .then(({ error: cacheError }) => {
-                        if (cacheError) {
-                            console.error("⚠️ [bKash Token] DB cache failed:", cacheError.message);
-                        }
-                    })
-                    .catch?.((err) => {
-                        // In case the runtime returns a real Promise in future versions
+                if (sql) {
+                    sql`
+                        INSERT INTO bkash_tokens (id, auth_token, updated_at)
+                        VALUES (1, ${token}, NOW())
+                        ON CONFLICT (id) DO UPDATE
+                            SET auth_token = EXCLUDED.auth_token, updated_at = NOW()
+                    `.catch((err) => {
                         console.error("⚠️ [bKash Token] DB cache failed:", err?.message || err);
                     });
+                } else {
+                    supabase
+                        .from('bkash_tokens')
+                        .upsert({
+                            id: 1,
+                            auth_token: token,
+                            updated_at: new Date().toISOString()
+                        })
+                        .then(({ error: cacheError }) => {
+                            if (cacheError) {
+                                console.error("⚠️ [bKash Token] DB cache failed:", cacheError.message);
+                            }
+                        })
+                        .catch?.((err) => {
+                            console.error("⚠️ [bKash Token] DB cache failed:", err?.message || err);
+                        });
+                }
 
             } catch (tokenError) {
                 console.error("❌ [bKash Token] Generation failed:", tokenError.message);
@@ -305,9 +327,16 @@ exports.bkashCallback = async (req, res) => {
                 );
             } catch (e) { console.log("Cancel Log Query Skipped"); }
 
-            await supabase.from('payment_logs').insert({
-                payment_id: cleanPaymentID, invoice: invoiceNumber, status: 'cancelled', message: errorMessage, created_at: transactionTime
-            });
+            if (sql) {
+                await sql`
+                    INSERT INTO payment_logs (payment_id, invoice, status, message, created_at)
+                    VALUES (${cleanPaymentID}, ${invoiceNumber}, 'cancelled', ${errorMessage}, ${transactionTime})
+                `;
+            } else {
+                await supabase.from('payment_logs').insert({
+                    payment_id: cleanPaymentID, invoice: invoiceNumber, status: 'cancelled', message: errorMessage, created_at: transactionTime
+                });
+            }
 
             return res.redirect(`${process.env.FRONTEND_URL}/payment-failed?message=${encodeURIComponent(errorMessage)}&invoice=${invoiceNumber}`);
         }
@@ -331,9 +360,16 @@ exports.bkashCallback = async (req, res) => {
                 errorMessage = "Payment Failed";
             }
 
-            await supabase.from('payment_logs').insert({
-                payment_id: cleanPaymentID, invoice: invoiceNumber, status: 'failed', message: errorMessage, created_at: transactionTime
-            });
+            if (sql) {
+                await sql`
+                    INSERT INTO payment_logs (payment_id, invoice, status, message, created_at)
+                    VALUES (${cleanPaymentID}, ${invoiceNumber}, 'failed', ${errorMessage}, ${transactionTime})
+                `;
+            } else {
+                await supabase.from('payment_logs').insert({
+                    payment_id: cleanPaymentID, invoice: invoiceNumber, status: 'failed', message: errorMessage, created_at: transactionTime
+                });
+            }
 
             return res.redirect(`${process.env.FRONTEND_URL}/payment-failed?message=${encodeURIComponent(errorMessage)}&invoice=${invoiceNumber}`);
         }
@@ -380,15 +416,34 @@ exports.bkashCallback = async (req, res) => {
                 // ✅ বাগ ফিক্স: এখানে চেক করতে হবে ইউজার আসলেই ৩০০ টাকা দিয়েছে কি না
                 const paidAmount = parseFloat(paymentData.amount || 0);
                 if (paidAmount < 300) {
-                    await supabase.from('payment_logs').insert({
-                        payment_id: cleanPaymentID, invoice: invoiceNumber, status: 'failed', message: 'Amount mismatch/Partial payment', created_at: transactionTime
-                    });
+                    if (sql) {
+                        await sql`
+                            INSERT INTO payment_logs (payment_id, invoice, status, message, created_at)
+                            VALUES (${cleanPaymentID}, ${invoiceNumber}, 'failed', 'Amount mismatch/Partial payment', ${transactionTime})
+                        `;
+                    } else {
+                        await supabase.from('payment_logs').insert({
+                            payment_id: cleanPaymentID, invoice: invoiceNumber, status: 'failed', message: 'Amount mismatch/Partial payment', created_at: transactionTime
+                        });
+                    }
                     return res.redirect(`${process.env.FRONTEND_URL}/payment-failed?message=Invalid Payment Amount`);
                 }
 
                 // ৩০০ টাকা ঠিক থাকলে এরপর ডাটাবেসে এন্ট্রি হবে
                 const trxId = paymentData.trxID || paymentData.trxId;
                 const verificationToken = crypto.randomUUID();
+
+                if (sql) {
+                    await sql`
+                        INSERT INTO payment_verifications (
+                            payment_id, trx_id, amount, verification_token, status, customer_number
+                        ) VALUES (
+                            ${cleanPaymentID}, ${trxId}, ${paidAmount}, ${verificationToken}, 'completed',
+                            ${paymentData.customerMsisdn || paymentData.payerAccount}
+                        )
+                    `;
+                    return res.redirect(`${process.env.FRONTEND_URL}/registration?step=3&token=${verificationToken}`);
+                }
 
                 await supabase.from('payment_verifications').insert({
                     payment_id: cleanPaymentID,
@@ -405,9 +460,16 @@ exports.bkashCallback = async (req, res) => {
                 errorMessage = getBkashErrorMessage(code) || paymentData?.errorMessageEn || "Payment Processing Failed";
                 invoiceNumber = paymentData?.merchantInvoiceNumber || invoiceNumber;
 
-                await supabase.from('payment_logs').insert({
-                    payment_id: cleanPaymentID, invoice: invoiceNumber, status: 'failed', message: errorMessage, created_at: transactionTime
-                });
+                if (sql) {
+                    await sql`
+                        INSERT INTO payment_logs (payment_id, invoice, status, message, created_at)
+                        VALUES (${cleanPaymentID}, ${invoiceNumber}, 'failed', ${errorMessage}, ${transactionTime})
+                    `;
+                } else {
+                    await supabase.from('payment_logs').insert({
+                        payment_id: cleanPaymentID, invoice: invoiceNumber, status: 'failed', message: errorMessage, created_at: transactionTime
+                    });
+                }
 
                 return res.redirect(`${process.env.FRONTEND_URL}/payment-failed?message=${encodeURIComponent(errorMessage)}&invoice=${invoiceNumber}`);
             }

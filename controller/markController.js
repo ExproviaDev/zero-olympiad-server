@@ -1,6 +1,6 @@
 const supabase = require("../config/db");
+const sql = require("../config/pg");
 
-// SDG number (1-17) → category name stored in round_performances.sdg_category
 const SDG_NAMES = [
     "No Poverty",
     "Zero Hunger",
@@ -21,7 +21,6 @@ const SDG_NAMES = [
     "Partnerships for the Goals",
 ];
 
-// ১. ভিডিও লিংক সাবমিট করা
 const submitVideoLink = async (req, res) => {
     try {
         const { userId, videoLink, roundNumber } = req.body;
@@ -32,6 +31,25 @@ const submitVideoLink = async (req, res) => {
         else if (roundNum === 3) table = 'round_3_final';
         else {
             return res.status(400).json({ success: false, message: "Invalid round for video submission." });
+        }
+
+        if (sql) {
+            const tableIdent = sql(table);
+            const rows = await sql`
+                SELECT user_id FROM ${tableIdent} WHERE user_id = ${userId} LIMIT 1
+            `;
+            if (!rows[0]) {
+                return res.status(403).json({ success: false, message: "You are not qualified for this round." });
+            }
+
+            await sql`
+                UPDATE ${tableIdent}
+                SET video_link = ${videoLink},
+                    status = 'submitted',
+                    updated_at = NOW()
+                WHERE user_id = ${userId}
+            `;
+            return res.status(200).json({ success: true, message: "Video link submitted successfully!" });
         }
 
         const { data: userExists, error: checkError } = await supabase
@@ -49,20 +67,18 @@ const submitVideoLink = async (req, res) => {
             .update({
                 video_link: videoLink,
                 status: 'submitted',
-                updated_at: new Date()
+                updated_at: new Date(),
             })
             .eq('user_id', userId);
 
         if (updateError) throw updateError;
 
         res.status(200).json({ success: true, message: "Video link submitted successfully!" });
-
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
 };
 
-// ২. জাজ স্কোর আপডেট
 const updateJudgeScore = async (req, res) => {
     try {
         const { userId, roundNumber, judgeScore } = req.body;
@@ -73,48 +89,127 @@ const updateJudgeScore = async (req, res) => {
         else if (roundNum === 3) table = 'round_3_final';
         else return res.status(400).json({ message: "Invalid Round" });
 
+        const score = parseFloat(judgeScore);
+
+        if (sql) {
+            const tableIdent = sql(table);
+            await sql`
+                UPDATE ${tableIdent}
+                SET jury_score = ${score},
+                    status = 'evaluated',
+                    updated_at = NOW()
+                WHERE user_id = ${userId}
+            `;
+            return res.status(200).json({ success: true, message: "Judge score updated!" });
+        }
+
         const { error } = await supabase
             .from(table)
             .update({
-                jury_score: parseFloat(judgeScore),
+                jury_score: score,
                 status: 'evaluated',
-                updated_at: new Date()
+                updated_at: new Date(),
             })
             .eq('user_id', userId);
 
         if (error) throw error;
 
         res.status(200).json({ success: true, message: "Judge score updated!" });
-
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
 };
 
-// ৩. লিডারবোর্ড ভিউ — sdgNumber param দিয়ে SDG-specific filter
 const getLeaderboard = async (req, res) => {
     try {
-        // sdgNumber: "all" or numeric string "1"–"17"
-        // category: legacy param (kept for backward compat)
         const { roundNumber, sdgNumber, category, page = 1, limit = 50 } = req.query;
         const roundNum = parseInt(roundNumber);
         const pageInt = parseInt(page);
         const limitInt = parseInt(limit);
 
-        // Resolve SDG number — prefer new sdgNumber param over legacy category
         let sdgNum = null;
         if (sdgNumber && sdgNumber !== "all") {
             sdgNum = parseInt(sdgNumber);
         } else if (category && category !== "All") {
             const idx = SDG_NAMES.findIndex(
-                n => n.toLowerCase() === String(category).toLowerCase()
+                (n) => n.toLowerCase() === String(category).toLowerCase()
             );
             if (idx !== -1) sdgNum = idx + 1;
         }
 
-        const from = (pageInt - 1) * limitInt;
-        const to = from + limitInt - 1;
+        const offset = (pageInt - 1) * limitInt;
 
+        if (sql) {
+            let rows = [];
+
+            if (roundNum === 1) {
+                rows = await sql`
+                    SELECT
+                        rp.*,
+                        json_build_object(
+                            'name', up.name,
+                            'profile_image_url', up.profile_image_url,
+                            'assigned_sdg_number', up.assigned_sdg_number
+                        ) AS user_profiles,
+                        COUNT(*) OVER() AS total_count
+                    FROM round_performances rp
+                    INNER JOIN user_profiles up ON up.user_id = rp.user_id
+                    WHERE rp.round_number = 1
+                      AND (${sdgNum}::int IS NULL OR up.assigned_sdg_number = ${sdgNum})
+                    ORDER BY rp.quiz_score DESC, rp.time_taken ASC
+                    LIMIT ${limitInt} OFFSET ${offset}
+                `;
+            } else if (roundNum === 2) {
+                rows = await sql`
+                    SELECT
+                        r2.*,
+                        json_build_object(
+                            'name', up.name,
+                            'profile_image_url', up.profile_image_url,
+                            'assigned_sdg_number', up.assigned_sdg_number
+                        ) AS user_profiles,
+                        COUNT(*) OVER() AS total_count
+                    FROM round_2_selection r2
+                    INNER JOIN user_profiles up ON up.user_id = r2.user_id
+                    WHERE (${sdgNum}::int IS NULL OR r2.assigned_sdg_number = ${sdgNum})
+                    ORDER BY r2.jury_score DESC
+                    LIMIT ${limitInt} OFFSET ${offset}
+                `;
+            } else if (roundNum === 3) {
+                rows = await sql`
+                    SELECT
+                        r3.*,
+                        json_build_object(
+                            'name', up.name,
+                            'profile_image_url', up.profile_image_url,
+                            'assigned_sdg_number', up.assigned_sdg_number
+                        ) AS user_profiles,
+                        COUNT(*) OVER() AS total_count
+                    FROM round_3_final r3
+                    INNER JOIN user_profiles up ON up.user_id = r3.user_id
+                    WHERE (${sdgNum}::int IS NULL OR up.assigned_sdg_number = ${sdgNum})
+                    ORDER BY r3.total_calculated_score DESC
+                    LIMIT ${limitInt} OFFSET ${offset}
+                `;
+            }
+
+            const total = rows[0]?.total_count ? Number(rows[0].total_count) : 0;
+            const data = rows.map((row) => {
+                const { total_count, ...rest } = row;
+                return rest;
+            });
+
+            return res.status(200).json({
+                success: true,
+                data,
+                total,
+                page: pageInt,
+                limit: limitInt,
+            });
+        }
+
+        const from = offset;
+        const to = from + limitInt - 1;
         let query;
 
         if (roundNum === 1) {
@@ -124,36 +219,23 @@ const getLeaderboard = async (req, res) => {
                 .eq('round_number', 1)
                 .order('quiz_score', { ascending: false })
                 .order('time_taken', { ascending: true });
-
-            // Filter by assigned_sdg_number via the joined user_profiles table
-            // This is reliable regardless of how sdg_category string is stored
-            if (sdgNum) {
-                query = query.eq('user_profiles.assigned_sdg_number', sdgNum);
-            }
-        }
-        else if (roundNum === 2) {
+            if (sdgNum) query = query.eq('user_profiles.assigned_sdg_number', sdgNum);
+        } else if (roundNum === 2) {
             query = supabase
                 .from('round_2_selection')
                 .select(`*, user_profiles!inner(name, profile_image_url, assigned_sdg_number)`, { count: 'exact' })
                 .order('jury_score', { ascending: false });
-
             if (sdgNum) query = query.eq('assigned_sdg_number', sdgNum);
-        }
-        else if (roundNum === 3) {
+        } else if (roundNum === 3) {
             query = supabase
                 .from('round_3_final')
                 .select(`*, user_profiles!inner(name, profile_image_url, assigned_sdg_number)`, { count: 'exact' })
                 .order('total_calculated_score', { ascending: false });
-
             if (sdgNum) query = query.eq('user_profiles.assigned_sdg_number', sdgNum);
         }
 
         const { data, error, count } = await query.range(from, to);
-
-        if (error) {
-            console.error("[getLeaderboard] Fetch Error:", error);
-            throw error;
-        }
+        if (error) throw error;
 
         res.status(200).json({
             success: true,
@@ -162,15 +244,13 @@ const getLeaderboard = async (req, res) => {
             page: pageInt,
             limit: limitInt,
         });
-
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
 };
 
-// ৪. AUTOMATIC PROMOTION SYSTEM (Round 1 → 2, Round 2 → 3)
-// sdgNumber (optional): if provided, only promote for that specific SDG.
-//                       if omitted, promote all 17 SDGs.
+// Promotion is multi-step write logic — kept on Supabase JS to minimize risk.
+// Performance impact is low: this runs only at round transitions (admin action).
 const promoteUsersByRanking = async (req, res) => {
     const { limit, roundNumber, sdgNumber } = req.body;
 
@@ -179,7 +259,6 @@ const promoteUsersByRanking = async (req, res) => {
         const nextRound = currentRound + 1;
         const limitNum = parseInt(limit);
 
-        // Determine which SDGs to process
         const targetSdgNum = sdgNumber ? parseInt(sdgNumber) : null;
         const sdgRange = targetSdgNum ? [targetSdgNum] : Array.from({ length: 17 }, (_, i) => i + 1);
 
@@ -189,7 +268,6 @@ const promoteUsersByRanking = async (req, res) => {
         for (const i of sdgRange) {
             let topUsers = [];
 
-            // CASE 1: Round 1 -> 2
             if (currentRound === 1) {
                 const { data, error } = await supabase
                     .from('round_performances')
@@ -202,9 +280,7 @@ const promoteUsersByRanking = async (req, res) => {
 
                 if (error) console.error(`[promote] SDG ${i} round 1 error:`, error.message);
                 topUsers = data || [];
-            }
-            // CASE 2: Round 2 -> 3
-            else if (currentRound === 2) {
+            } else if (currentRound === 2) {
                 const { data, error } = await supabase
                     .from('round_2_selection')
                     .select(`
@@ -226,9 +302,8 @@ const promoteUsersByRanking = async (req, res) => {
                 continue;
             }
 
-            const qualifiedIds = topUsers.map(u => u.user_id);
+            const qualifiedIds = topUsers.map((u) => u.user_id);
 
-            // Mark promoted in source table
             if (currentRound === 1) {
                 await supabase
                     .from('round_performances')
@@ -242,9 +317,8 @@ const promoteUsersByRanking = async (req, res) => {
                     .in('user_id', qualifiedIds);
             }
 
-            // Insert into destination table
             if (nextRound === 2) {
-                const round2Entries = topUsers.map(user => ({
+                const round2Entries = topUsers.map((user) => ({
                     user_id: user.user_id,
                     assigned_sdg_number: i,
                     quiz_score: user.quiz_score,
@@ -254,8 +328,7 @@ const promoteUsersByRanking = async (req, res) => {
                     is_finalist: false,
                 }));
                 await supabase.from('round_2_selection').upsert(round2Entries, { onConflict: 'user_id' });
-            }
-            else if (nextRound === 3) {
+            } else if (nextRound === 3) {
                 const round3Entries = topUsers.map((user, index) => ({
                     user_id: user.user_id,
                     total_calculated_score: user.jury_score || 0,
@@ -265,7 +338,6 @@ const promoteUsersByRanking = async (req, res) => {
                 await supabase.from('round_3_final').upsert(round3Entries, { onConflict: 'user_id' });
             }
 
-            // Update user_profiles round_type
             await supabase
                 .from('user_profiles')
                 .update({ round_type: `round_${nextRound}` })
@@ -281,7 +353,6 @@ const promoteUsersByRanking = async (req, res) => {
             message: `Success! Promoted ${totalPromotedCount} users from ${scope} to Round ${nextRound}.`,
             details: promotionLog,
         });
-
     } catch (error) {
         console.error("[promoteUsersByRanking]", error);
         res.status(500).json({ success: false, error: error.message });

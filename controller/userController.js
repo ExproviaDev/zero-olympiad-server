@@ -1,4 +1,5 @@
 const supabase = require("../config/db");
+const sql = require("../config/pg");
 const sgMail = require('@sendgrid/mail');
 const crypto = require('crypto');
 
@@ -34,49 +35,84 @@ const addMember = async (req, res) => {
       sdgRole = "SDG Ambassador";
     }
 
-    const { error: profileError } = await supabase
-      .from("user_profiles")
-      .insert([
-        {
-          user_id: authUser.user.id,
-          email: email,
-          name: name,
-          phone: phone,
-          role: role || 'user',
-          district: "N/A",
-          institution: "Zero Olympiad",
-          education_type: "General",
-          grade_level: "N/A",
-          current_level: "N/A",
-          sdg_role: sdgRole,
-          assigned_sdg_number: 0,
-          round_type: roundType,
-          is_blocked: false,
-          promo_code: promoCode || null
-        }
-      ]);
+    const newUserId = authUser.user.id;
 
-    if (profileError) throw profileError;
+    if (sql) {
+      await sql`
+        INSERT INTO user_profiles (
+          user_id, email, name, phone, role, district, institution,
+          education_type, grade_level, current_level, sdg_role,
+          assigned_sdg_number, round_type, is_blocked, promo_code
+        ) VALUES (
+          ${newUserId}, ${email}, ${name}, ${phone}, ${role || 'user'},
+          'N/A', 'Zero Olympiad', 'General', 'N/A', 'N/A', ${sdgRole},
+          0, ${roundType}, false, ${promoCode || null}
+        )
+      `;
+    } else {
+      const { error: profileError } = await supabase
+        .from("user_profiles")
+        .insert([
+          {
+            user_id: newUserId,
+            email: email,
+            name: name,
+            phone: phone,
+            role: role || 'user',
+            district: "N/A",
+            institution: "Zero Olympiad",
+            education_type: "General",
+            grade_level: "N/A",
+            current_level: "N/A",
+            sdg_role: sdgRole,
+            assigned_sdg_number: 0,
+            round_type: roundType,
+            is_blocked: false,
+            promo_code: promoCode || null
+          }
+        ]);
+
+      if (profileError) throw profileError;
+    }
 
     // 🔥 Extra Logic: User বা Ambassador হলে Round 1 টেবিলে ডাটা রাখা
     if (role === 'user' || role === 'ambassador' || role === 'Participant') {
-      await supabase.from('round_1_initial').insert([{
-        user_id: authUser.user.id,
-        quiz_score: 0,
-        is_qualified: false
-      }]);
+      if (sql) {
+        await sql`
+          INSERT INTO round_1_initial (user_id, quiz_score, is_qualified)
+          VALUES (${newUserId}, 0, false)
+        `;
+      } else {
+        await supabase.from('round_1_initial').insert([{
+          user_id: newUserId,
+          quiz_score: 0,
+          is_qualified: false
+        }]);
+      }
     }
 
     // 🔥 Extra Logic: Ambassador হলে Ambassador টেবিলে ডাটা রাখা
     if (role === 'ambassador') {
-      await supabase.from('ambassador_profiles').insert([{
-        user_id: authUser.user.id,
-        promo_code: null, // Admin কাস্টম কোড পরে আপডেট করে দিতে পারবে
-        total_referrals: 0
-      }]);
+      if (sql) {
+        await sql`
+          INSERT INTO ambassador_profiles (user_id, promo_code, total_referrals)
+          VALUES (${newUserId}, NULL, 0)
+        `;
+      } else {
+        await supabase.from('ambassador_profiles').insert([{
+          user_id: newUserId,
+          promo_code: null,
+          total_referrals: 0
+        }]);
+      }
     }
-    if (promoCode) {
-      // ওই প্রোমো কোডটি কোন অ্যাম্বাসেডরের তা খুঁজে বের করা
+    if (promoCode && sql) {
+      await sql`
+        UPDATE ambassador_profiles
+        SET total_referrals = COALESCE(total_referrals, 0) + 1
+        WHERE promo_code = ${promoCode.toUpperCase()}
+      `;
+    } else if (promoCode) {
       const { data: ambassadorData } = await supabase
         .from('ambassador_profiles')
         .select('id, total_referrals')
@@ -174,6 +210,45 @@ const getAllUsers = async (req, res) => {
       return res.status(400).json({ success: false, error: "Search query is too long." });
     }
 
+    if (sql) {
+      const sanitized = search ? search.replace(/[%_]/g, "\\$&") : null;
+      const pattern = sanitized ? `%${sanitized}%` : null;
+      const roleFilter = role !== "all" ? role : null;
+
+      const rows = await sql`
+        SELECT
+          user_id, name, email, phone, district, institution,
+          education_type, grade_level, role, is_blocked, created_at,
+          COUNT(*) OVER() AS total_count
+        FROM user_profiles
+        WHERE (${pattern}::text IS NULL OR
+               name ILIKE ${pattern} OR email ILIKE ${pattern} OR phone ILIKE ${pattern})
+          AND (${roleFilter}::text IS NULL OR role = ${roleFilter})
+        ORDER BY created_at DESC
+        LIMIT ${limit} OFFSET ${from}
+      `;
+
+      const totalUsers = rows[0]?.total_count ? Number(rows[0].total_count) : 0;
+      const data = rows.map(({ total_count, ...rest }) => rest);
+
+      console.log("[admin/all-users]", {
+        total_ms: Date.now() - t0,
+        page, limit,
+        returned: data.length,
+        total: totalUsers,
+        pg: true,
+      });
+
+      return res.status(200).json({
+        success: true,
+        data,
+        totalUsers,
+        totalPages: Math.ceil(totalUsers / limit),
+        currentPage: page,
+        limit,
+      });
+    }
+
     let query = supabase
       .from("user_profiles")
       .select(
@@ -223,6 +298,24 @@ const updateUserStatus = async (req, res) => {
   const { role, is_blocked } = req.body;
 
   try {
+    if (sql) {
+      if (role === 'ambassador') {
+        await sql`
+          INSERT INTO ambassador_profiles (user_id, promo_code, total_referrals)
+          VALUES (${id}, NULL, 0)
+          ON CONFLICT (user_id) DO NOTHING
+        `;
+      }
+      if (role !== undefined && is_blocked !== undefined) {
+        await sql`UPDATE user_profiles SET role = ${role}, is_blocked = ${is_blocked} WHERE user_id = ${id}`;
+      } else if (role !== undefined) {
+        await sql`UPDATE user_profiles SET role = ${role} WHERE user_id = ${id}`;
+      } else if (is_blocked !== undefined) {
+        await sql`UPDATE user_profiles SET is_blocked = ${is_blocked} WHERE user_id = ${id}`;
+      }
+      return res.status(200).json({ success: true, message: "User updated successfully" });
+    }
+
     // ১. অ্যাম্বাসেডর লজিক
     if (role === 'ambassador') {
       const { data: existingAmb } = await supabase
@@ -266,6 +359,14 @@ const updateUserStatus = async (req, res) => {
 const deleteUser = async (req, res) => {
   const { id } = req.params;
   try {
+    if (sql) {
+      const { error: authError } = await supabase.auth.admin.deleteUser(id);
+      if (authError) throw authError;
+
+      await sql`DELETE FROM user_profiles WHERE user_id = ${id}`;
+      return res.status(200).json({ success: true, message: "User completely deleted from system" });
+    }
+
     // ১. প্রথমে Supabase Auth থেকে ইউজারকে ডিলিট করা
     const { error: authError } = await supabase.auth.admin.deleteUser(id);
 

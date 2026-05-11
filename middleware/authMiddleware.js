@@ -1,4 +1,5 @@
 const supabase = require("../config/db");
+const sql = require("../config/pg");
 
 async function getUserFromBearer(req) {
   const authHeader = req.headers.authorization;
@@ -12,6 +13,17 @@ async function getUserFromBearer(req) {
 }
 
 async function getRoleForUser(userId) {
+  if (sql) {
+    try {
+      const rows = await sql`
+        SELECT role FROM user_profiles WHERE user_id = ${userId} LIMIT 1
+      `;
+      return rows[0]?.role ?? null;
+    } catch (e) {
+      console.warn("[authMiddleware] pg getRoleForUser failed, falling back:", e.message);
+    }
+  }
+
   const { data, error } = await supabase
     .from("user_profiles")
     .select("role")

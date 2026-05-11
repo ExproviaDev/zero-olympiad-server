@@ -1,8 +1,29 @@
 const supabase = require('../config/db');
+const sql = require('../config/pg');
 
-// ১. সকল অ্যাম্বাসেডরদের লিস্ট ফেচ করা (অ্যাডমিনের জন্য)
 const getAllAmbassadors = async (req, res) => {
     try {
+        if (sql) {
+            const rows = await sql`
+                SELECT
+                    ap.id,
+                    ap.promo_code,
+                    ap.total_referrals,
+                    ap.created_at,
+                    json_build_object(
+                        'name', up.name,
+                        'email', up.email,
+                        'phone', up.phone,
+                        'district', up.district,
+                        'institution', up.institution
+                    ) AS user_profiles
+                FROM ambassador_profiles ap
+                LEFT JOIN user_profiles up ON up.user_id = ap.user_id
+                ORDER BY ap.total_referrals DESC
+            `;
+            return res.status(200).json({ success: true, data: rows });
+        }
+
         const { data, error } = await supabase
             .from('ambassador_profiles')
             .select(`
@@ -18,7 +39,7 @@ const getAllAmbassadors = async (req, res) => {
                     institution
                 )
             `)
-            .order('total_referrals', { ascending: false }); // সবচেয়ে বেশি রেফারাল উপরে থাকবে
+            .order('total_referrals', { ascending: false });
 
         if (error) throw error;
         res.status(200).json({ success: true, data });
@@ -27,18 +48,24 @@ const getAllAmbassadors = async (req, res) => {
     }
 };
 
-
-
-
-// ২. নির্দিষ্ট অ্যাম্বাসেডরের আন্ডারে কারা জয়েন করেছে তাদের লিস্ট দেখা
 const getReferralList = async (req, res) => {
     const { promoCode } = req.params;
     try {
+        const codeUpper = promoCode.toUpperCase();
+
+        if (sql) {
+            const rows = await sql`
+                SELECT name, district, institution, created_at
+                FROM user_profiles
+                WHERE promo_code = ${codeUpper}
+            `;
+            return res.status(200).json({ success: true, count: rows.length, data: rows });
+        }
+
         const { data, error } = await supabase
             .from('user_profiles')
             .select('name, district, institution, created_at')
-            .eq('promo_code', promoCode.toUpperCase()) //
-            // .eq('role', 'contestor'); // রোল চেক করা হচ্ছে না, কারণ কেউ অ্যাম্বাসেডর হতে পারে যিনি এখনও কন্টেস্টরদের রেফার করেননি
+            .eq('promo_code', codeUpper);
 
         if (error) throw error;
         res.status(200).json({ success: true, count: data.length, data });
@@ -54,6 +81,57 @@ const getAmbassadorSelfStats = async (req, res) => {
         if (!userId) {
             return res.status(401).json({ success: false, message: "User ID not found in token." });
         }
+
+        if (sql) {
+            let profileRows = await sql`
+                SELECT *
+                FROM ambassador_profiles
+                WHERE user_id = ${userId}
+                LIMIT 1
+            `;
+            let profile = profileRows[0] ?? null;
+
+            if (!profile) {
+                const userRows = await sql`
+                    SELECT role
+                    FROM user_profiles
+                    WHERE user_id = ${userId}
+                    LIMIT 1
+                `;
+                const userProfile = userRows[0];
+
+                if (userProfile && userProfile.role === 'ambassador') {
+                    const upserted = await sql`
+                        INSERT INTO ambassador_profiles (user_id, promo_code, total_referrals)
+                        VALUES (${userId}, NULL, 0)
+                        ON CONFLICT (user_id) DO UPDATE
+                            SET total_referrals = ambassador_profiles.total_referrals
+                        RETURNING *
+                    `;
+                    profile = upserted[0];
+                    console.log(`Auto-healed ambassador profile for: ${userId}`);
+                } else {
+                    return res.status(404).json({ success: false, message: "Ambassador profile not found or unauthorized." });
+                }
+            }
+
+            let referrals = [];
+            if (profile.promo_code) {
+                referrals = await sql`
+                    SELECT name, district, institution, created_at
+                    FROM user_profiles
+                    WHERE promo_code = ${profile.promo_code}
+                `;
+            }
+
+            return res.status(200).json({
+                success: true,
+                myPromoCode: profile.promo_code,
+                totalReferrals: profile.total_referrals,
+                referralList: referrals,
+            });
+        }
+
         let { data: profile, error: profileError } = await supabase
             .from('ambassador_profiles')
             .select('*')
@@ -78,42 +156,38 @@ const getAmbassadorSelfStats = async (req, res) => {
                     .single();
 
                 if (upsertError) throw upsertError;
-
-                profile = upsertedProfile; // নতুন প্রোফাইলটি ভেরিয়েবলে সেট করে দিলাম
-                console.log(`✅ Auto-healed (Upserted) missing ambassador profile for: ${userId}`);
+                profile = upsertedProfile;
             } else {
                 return res.status(404).json({ success: false, message: "Ambassador profile not found or unauthorized." });
             }
         }
+
         let referrals = [];
         if (profile.promo_code) {
             const { data: refData, error: refError } = await supabase
                 .from('user_profiles')
                 .select('name, district, institution, created_at')
-                .eq('promo_code', profile.promo_code)
-                // .eq('role', 'contestor'); // রোল চেক করা হচ্ছে না, কারণ কেউ অ্যাম্বাসেডর হতে পারে যিনি এখনও কন্টেস্টরদের রেফার করেননি
+                .eq('promo_code', profile.promo_code);
 
             if (refError) throw refError;
             referrals = refData || [];
         }
 
-        // ৪. ফ্রন্টএন্ডে সঠিক রেসপন্স পাঠানো
         res.status(200).json({
             success: true,
             myPromoCode: profile.promo_code,
             totalReferrals: profile.total_referrals,
-            referralList: referrals
+            referralList: referrals,
         });
-
     } catch (error) {
         console.error("Server Error in getAmbassadorSelfStats:", error.message);
         res.status(500).json({ success: false, error: error.message });
     }
 };
-// ৩. অ্যাম্বাসেডর নিজের প্রোমো কোড সেট করবে (যদি আগে null থাকে)
+
 const updatePromoCode = async (req, res) => {
     const { newPromoCode } = req.body;
-    const userId = req.user.sub || req.user.id; // মিডলওয়্যার থেকে ইউজার আইডি
+    const userId = req.user.sub || req.user.id;
 
     if (!newPromoCode) {
         return res.status(400).json({ success: false, message: "Promo code is required." });
@@ -122,7 +196,42 @@ const updatePromoCode = async (req, res) => {
     const formattedCode = newPromoCode.trim().toUpperCase();
 
     try {
-        // ১. চেক করা যে ইউজারের কোড অলরেডি আছে কি না
+        if (sql) {
+            const profileRows = await sql`
+                SELECT promo_code
+                FROM ambassador_profiles
+                WHERE user_id = ${userId}
+                LIMIT 1
+            `;
+            const profile = profileRows[0];
+
+            if (!profile) {
+                return res.status(404).json({ success: false, message: "Ambassador profile not found." });
+            }
+            if (profile.promo_code) {
+                return res.status(400).json({ success: false, message: "Promo code is already set and cannot be changed." });
+            }
+
+            const existing = await sql`
+                SELECT id FROM ambassador_profiles WHERE promo_code = ${formattedCode} LIMIT 1
+            `;
+            if (existing[0]) {
+                return res.status(400).json({ success: false, message: "This promo code is already taken. Please try another." });
+            }
+
+            await sql`
+                UPDATE ambassador_profiles
+                SET promo_code = ${formattedCode}
+                WHERE user_id = ${userId}
+            `;
+
+            return res.status(200).json({
+                success: true,
+                message: "Promo code set successfully!",
+                promoCode: formattedCode,
+            });
+        }
+
         const { data: profile, error: profileError } = await supabase
             .from('ambassador_profiles')
             .select('promo_code')
@@ -132,13 +241,10 @@ const updatePromoCode = async (req, res) => {
         if (profileError || !profile) {
             return res.status(404).json({ success: false, message: "Ambassador profile not found." });
         }
-
-        // কোড যদি অলরেডি থেকে থাকে, তবে এডিট করতে দিবে না
         if (profile.promo_code) {
             return res.status(400).json({ success: false, message: "Promo code is already set and cannot be changed." });
         }
 
-        // ২. চেক করা যে এই কোডটি অন্য কোনো অ্যাম্বাসেডর নিয়েছে কি না
         const { data: existingCode } = await supabase
             .from('ambassador_profiles')
             .select('id')
@@ -149,7 +255,6 @@ const updatePromoCode = async (req, res) => {
             return res.status(400).json({ success: false, message: "This promo code is already taken. Please try another." });
         }
 
-        // ৩. আপডেট লজিক
         const { error: updateError } = await supabase
             .from('ambassador_profiles')
             .update({ promo_code: formattedCode })
@@ -160,16 +265,16 @@ const updatePromoCode = async (req, res) => {
         res.status(200).json({
             success: true,
             message: "Promo code set successfully!",
-            promoCode: formattedCode
+            promoCode: formattedCode,
         });
-
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
 };
+
 module.exports = {
     getAllAmbassadors,
     getReferralList,
     getAmbassadorSelfStats,
-    updatePromoCode
+    updatePromoCode,
 };
