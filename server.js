@@ -115,7 +115,7 @@ app.use('/api/invoice', invoiceRouter);
 
 
 app.get("/", async (req, res)=>{
-    const x = 'Zero Olympiad server is ok!';
+    const x = 'Woh! everything is working fine!✅🥰';
     res.send(x);
 })
 
