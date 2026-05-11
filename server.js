@@ -12,8 +12,8 @@ const leaderboardRouter = require('./router/leaderboardRouter');
 const announcementRouter = require('./router/announcementRouter');
 const ambassadorRouter = require('./router/ambassadorRouter');
 const invoiceRouter = require('./router/invoiceRouter');
-// In production on Vercel, env vars are injected automatically.
-// Keep dotenv only for local development.
+
+
 if (!process.env.VERCEL) {
   require('dotenv').config();
 }
@@ -22,7 +22,7 @@ if (!process.env.VERCEL) {
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-// Cloudflare/Vercel proxy chain থেকে real client IP resolve করার জন্য
+
 app.set("trust proxy", 1);
 
 const getClientIp = (req) => {
