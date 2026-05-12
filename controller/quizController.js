@@ -466,6 +466,151 @@ const checkAttempt = async (req, res) => {
     }
 };
 
+/**
+ * One DB round-trip (RPC) when migrate SQL is applied; otherwise same payloads via Supabase selects.
+ */
+const getQuizEntranceBundle = async (req, res) => {
+    const userId = req.user?.sub;
+    const raw = req.query.category;
+    const category =
+        typeof raw === "string" && raw.trim() !== "" ? raw.trim() : null;
+
+    if (!userId) {
+        return res.status(401).json({ success: false, error: "Unauthorized" });
+    }
+
+    try {
+        if (sql) {
+            try {
+                const rows = await sql`
+                    SELECT public.get_quiz_entrance_bundle(${category}, ${userId}::uuid) AS bundle
+                `;
+                const bundle = rows[0]?.bundle;
+                return res.status(200).json({
+                    success: true,
+                    data: bundle?.data ?? [],
+                    has_attempted_first: !!bundle?.has_attempted_first,
+                });
+            } catch (e) {
+                const msg = typeof e?.message === "string" ? e.message : "";
+                const missingRpc =
+                    /does not exist/i.test(msg) &&
+                    /get_quiz_entrance_bundle/i.test(msg);
+                if (!missingRpc) throw e;
+                console.warn(
+                    "[quiz-entrance] RPC missing — falling back:",
+                    msg,
+                );
+            }
+        }
+
+        if (sql) {
+            const rows = await sql`
+                SELECT
+                    qs.id,
+                    qs.title,
+                    qs.category,
+                    qs.time_limit,
+                    qs.start_at,
+                    qs.ends_at,
+                    COALESCE(
+                        (
+                            SELECT json_agg(
+                                json_build_object(
+                                    'id', q.id,
+                                    'quiz_set_id', q.quiz_set_id,
+                                    'question_text', q.question_text,
+                                    'options', q.options
+                                )
+                                ORDER BY q.id
+                            )
+                            FROM questions q
+                            WHERE q.quiz_set_id = qs.id
+                        ),
+                        '[]'::json
+                    ) AS questions
+                FROM quiz_sets qs
+                WHERE qs.status = 'published'
+                  AND (${category ?? null}::text IS NULL OR qs.category = ${category ?? null})
+                ORDER BY qs.created_at DESC
+            `;
+            let firstId = rows[0]?.id;
+            let hasFirst = false;
+            if (firstId) {
+                const att = await sql`
+                    SELECT 1 FROM quiz_submissions
+                    WHERE user_id = ${userId} AND quiz_set_id = ${firstId}
+                    LIMIT 1
+                `;
+                hasFirst = att.length > 0;
+            }
+            return res.status(200).json({
+                success: true,
+                data: rows,
+                has_attempted_first: hasFirst,
+            });
+        }
+
+        const { data: bundle, error: rpcError } = await supabase.rpc(
+            "get_quiz_entrance_bundle",
+            { p_category: category, p_user_id: userId },
+        );
+        if (!rpcError && bundle != null) {
+            return res.status(200).json({
+                success: true,
+                data: bundle.data ?? [],
+                has_attempted_first: !!bundle.has_attempted_first,
+            });
+        }
+        if (rpcError) {
+            console.warn(
+                "[quiz-entrance] supabase rpc fallback:",
+                rpcError.message,
+            );
+        }
+
+        let query = supabase
+            .from("quiz_sets")
+            .select(
+                `
+                id,
+                title,
+                category,
+                time_limit,
+                start_at,
+                ends_at,
+                questions (id, quiz_set_id, question_text, options)
+            `,
+            )
+            .eq("status", "published");
+        if (category) query = query.eq("category", category);
+        const { data: list, error: listError } = await query.order(
+            "created_at",
+            { ascending: false },
+        );
+        if (listError) throw listError;
+
+        let hasFirst = false;
+        if (list?.length) {
+            const { data: sub } = await supabase
+                .from("quiz_submissions")
+                .select("id")
+                .eq("user_id", userId)
+                .eq("quiz_set_id", list[0].id)
+                .maybeSingle();
+            hasFirst = !!sub;
+        }
+        return res.status(200).json({
+            success: true,
+            data: list ?? [],
+            has_attempted_first: hasFirst,
+        });
+    } catch (error) {
+        console.error("[quiz-entrance]", error?.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
 const getUserAttempts = async (req, res) => {
     try {
         const { userId } = req.params;
@@ -503,5 +648,6 @@ module.exports = {
     submitQuiz,
     updateQuizStatus,
     checkAttempt,
-    getUserAttempts
+    getUserAttempts,
+    getQuizEntranceBundle,
 };

@@ -4,6 +4,21 @@ const express = require('express');
 const router = express.Router();
 
 router.use(express.json());
+
+// --- Logging Helpers ---
+const genRequestId = () => `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+const maskEmail = (email) => {
+    if (!email || typeof email !== "string") return email;
+    const [local, domain] = email.split("@");
+    if (!domain) return email;
+    const visible = local.slice(0, 2);
+    return `${visible}${"*".repeat(Math.max(local.length - 2, 1))}@${domain}`;
+};
+
+const logStep = (rid, step, data = {}) => {
+    console.log(`[auth/login][${rid}] ${step}`, data);
+};
 // --- SDG Number Calculation Helper ---
 const calculateAssignedSDG = (level) => {
     const l = level ? level.trim() : "";
@@ -37,176 +52,197 @@ const isAdmissionCandidateLevel = (level) => {
 };
 
 router.post('/login', async (req, res) => {
+    const rid = genRequestId();
+    const tStart = Date.now();
+
     const rawEmail = req.body?.email;
     const rawPassword = req.body?.password;
     const email = typeof rawEmail === "string" ? rawEmail.trim().toLowerCase() : rawEmail;
-    const password = typeof rawPassword === "string" ? rawPassword : rawPassword;
-    if (!email || !password) return res.status(400).json({ message: "Email and password are required." });
+    const password = rawPassword;
+
+    logStep(rid, "request_received", {
+        email_masked: maskEmail(email),
+        has_password: !!password,
+    });
+
+    if (!email || !password) {
+        logStep(rid, "validation_failed", { has_email: !!email, has_password: !!password });
+        return res.status(400).json({ message: "Email and password are required." });
+    }
 
     try {
-        const t0 = Date.now();
         const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
-        if (authError) return res.status(401).json({ message: authError.message });
-        const t1 = Date.now();
-        const token = authData?.session?.access_token;
-        if (!token) return res.status(500).json({ message: "Login session token missing." });
 
-        const userId = authData.user.id;
-
-        // Lean payload: only the fields the homepage / Sidebar / authSlice need on first render.
-        // Heavier fields (phone, district, institution, education_type, etc.) are background-hydrated
-        // by the client via /api/auth/me right after navigation.
-        const LOGIN_PROFILE_COLUMNS = [
-            'user_id',
-            'name',
-            'email',
-            'role',
-            'sdg_role',
-            'current_level',
-            'grade_level',
-            'assigned_sdg_number',
-            'is_participated',
-            'profile_image_url',
-            'round_type',
-        ].join(', ');
-
-        let profile = null;
-        let profileError = null;
-
-        if (sql) {
-            try {
-                const rows = await sql`
-                    SELECT
-                        user_id, name, email, role, sdg_role, current_level,
-                        grade_level, assigned_sdg_number, is_participated,
-                        profile_image_url, round_type
-                    FROM user_profiles
-                    WHERE user_id = ${userId}
-                    LIMIT 1
-                `;
-                profile = rows[0] ?? null;
-                if (!profile) {
-                    profileError = { code: 'PGRST116', message: 'Profile not found' };
-                }
-            } catch (e) {
-                console.warn('[auth/login] pg_lean_select_failed', { message: e.message });
-                profileError = e;
-            }
-
-            if (!profile) {
-                try {
-                    const rows = await sql`
-                        SELECT * FROM user_profiles WHERE user_id = ${userId} LIMIT 1
-                    `;
-                    profile = rows[0] ?? null;
-                    profileError = profile ? null : profileError;
-                } catch (e) {
-                    profileError = e;
-                }
-            }
-        } else {
-            const lean = await supabase
-                .from('user_profiles')
-                .select(LOGIN_PROFILE_COLUMNS)
-                .eq('user_id', userId)
-                .single();
-            profile = lean.data;
-            profileError = lean.error;
-
-            if (profileError) {
-                console.warn("[auth/login] lean_select_failed", {
-                    code: profileError.code,
-                    message: profileError.message,
-                });
-                const fallback = await supabase
-                    .from('user_profiles')
-                    .select('*')
-                    .eq('user_id', userId)
-                    .single();
-                profile = fallback.data;
-                profileError = fallback.error;
-            }
+        if (authError) {
+            logStep(rid, "auth_error", {
+                error_message: authError.message,
+                status: authError.status,
+                total_ms: Date.now() - tStart,
+            });
+            return res.status(401).json({ message: authError.message });
         }
-        const t2 = Date.now();
 
-        const userPayload = profile && !profileError
-            ? profile
-            : { id: userId, email: authData.user.email };
+        const token = authData?.session?.access_token;
+        if (!token) {
+            logStep(rid, "token_missing", { total_ms: Date.now() - tStart });
+            return res.status(500).json({ message: "Login session token missing." });
+        }
 
-        console.log("[auth/login]", {
-            auth_ms: t1 - t0,
-            profile_ms: t2 - t1,
-            total_ms: t2 - t0,
-            profile_hit: !!(profile && !profileError),
+        logStep(rid, "success", {
+            user_id: authData.user.id,
+            email_masked: maskEmail(email),
+            total_ms: Date.now() - tStart,
         });
 
         res.status(200).json({
             message: "Login successful!",
             token,
-            user: userPayload,
+            user: {
+                id: authData.user.id,
+                email: authData.user.email,
+            },
         });
 
     } catch (err) {
-        console.error("[auth/login] unhandled_error", err);
+        console.error(`[auth/login][${rid}] unhandled_error`, {
+            message: err?.message,
+            email_masked: maskEmail(email),
+            total_ms: Date.now() - tStart,
+        });
         res.status(500).json({ message: 'Internal server error occurred.' });
     }
 });
 
 router.get('/me', async (req, res) => {
+    const rid = genRequestId();
+    const tStart = Date.now();
+    console.log(`[auth/me][${rid}] request_received`, {
+        ip: req.ip || req.headers["x-forwarded-for"],
+        user_agent: req.headers["user-agent"],
+        has_auth_header: !!req.headers.authorization,
+        timestamp: new Date().toISOString(),
+    });
+
     try {
         const token = req.headers.authorization?.split(' ')[1];
-        if (!token) return res.status(401).json({ isAuthenticated: false });
+        if (!token) {
+            console.log(`[auth/me][${rid}] no_token`, { elapsed_ms: Date.now() - tStart });
+            return res.status(401).json({ isAuthenticated: false });
+        }
 
+        const tAuth = Date.now();
         const { data: userData, error: userError } = await supabase.auth.getUser(token);
+        console.log(`[auth/me][${rid}] supabase_get_user`, {
+            elapsed_ms: Date.now() - tAuth,
+            has_user: !!userData?.user,
+            has_error: !!userError,
+            error_message: userError?.message,
+        });
+
         if (userError || !userData?.user) return res.status(401).json({ isAuthenticated: false });
 
         const userId = userData.user.id;
 
         if (sql) {
+            const tPg = Date.now();
             const rows = await sql`
                 SELECT *
                 FROM user_profiles
                 WHERE user_id = ${userId}
                 LIMIT 1
             `;
-            if (!rows[0]) return res.status(404).json({ message: 'Profile not found' });
+            console.log(`[auth/me][${rid}] pg_profile_select`, {
+                elapsed_ms: Date.now() - tPg,
+                rows_returned: rows.length,
+                user_id: userId,
+            });
+            if (!rows[0]) {
+                console.warn(`[auth/me][${rid}] profile_not_found`, { user_id: userId });
+                return res.status(404).json({ message: 'Profile not found' });
+            }
+            console.log(`[auth/me][${rid}] success`, {
+                total_ms: Date.now() - tStart,
+                user_id: userId,
+                role: rows[0].role,
+            });
             return res.status(200).json({ isAuthenticated: true, user: rows[0] });
         }
 
+        const tSb = Date.now();
         const { data: profile, error: profileError } = await supabase
             .from('user_profiles')
             .select('*')
             .eq('user_id', userId)
             .single();
+        console.log(`[auth/me][${rid}] supabase_profile_select`, {
+            elapsed_ms: Date.now() - tSb,
+            has_data: !!profile,
+            has_error: !!profileError,
+            error_code: profileError?.code,
+            error_message: profileError?.message,
+        });
 
         if (profileError) return res.status(404).json({ message: "Profile not found" });
 
+        console.log(`[auth/me][${rid}] success`, {
+            total_ms: Date.now() - tStart,
+            user_id: userId,
+            role: profile?.role,
+        });
         res.status(200).json({
             isAuthenticated: true,
             user: profile
         });
     } catch (err) {
+        console.error(`[auth/me][${rid}] unhandled_error`, {
+            message: err?.message,
+            stack: err?.stack,
+            total_ms: Date.now() - tStart,
+        });
         res.status(401).json({ isAuthenticated: false });
     }
 });
 
 
 router.put('/update-profile', async (req, res) => {
+    const rid = genRequestId();
+    const tStart = Date.now();
+    console.log(`[auth/update-profile][${rid}] request_received`, {
+        ip: req.ip || req.headers["x-forwarded-for"],
+        has_auth_header: !!req.headers.authorization,
+        body_keys: req.body ? Object.keys(req.body) : [],
+        timestamp: new Date().toISOString(),
+    });
+
     try {
         const authHeader = req.headers.authorization;
         const token = authHeader?.split(' ')[1];
 
-        if (!token) return res.status(401).json({ error: "No token provided" });
+        if (!token) {
+            console.log(`[auth/update-profile][${rid}] no_token`);
+            return res.status(401).json({ error: "No token provided" });
+        }
 
         const { data: userData, error: userError } = await supabase.auth.getUser(token);
-        if (userError || !userData?.user) return res.status(401).json({ error: "Invalid token" });
+        if (userError || !userData?.user) {
+            console.warn(`[auth/update-profile][${rid}] invalid_token`, {
+                error_message: userError?.message,
+            });
+            return res.status(401).json({ error: "Invalid token" });
+        }
         const userId = userData.user.id;
 
         if (!userId) {
+            console.warn(`[auth/update-profile][${rid}] no_user_id_in_token`);
             return res.status(401).json({ error: "Unauthorized: User ID not found in token" });
         }
 
         const updates = { ...req.body };
+        console.log(`[auth/update-profile][${rid}] processing`, {
+            user_id: userId,
+            update_keys: Object.keys(updates),
+            grade_level_changed: !!updates.grade_level,
+        });
 
         // ১. যদি grade_level পরিবর্তন হয়, তাহলে রোল পুনরায় ক্যালকুলেট করা হবে
         if (updates.grade_level) {
@@ -234,21 +270,39 @@ router.put('/update-profile', async (req, res) => {
         if (sql) {
             const keys = Object.keys(updates);
             if (keys.length === 0) {
+                console.log(`[auth/update-profile][${rid}] no_keys_to_update`);
                 return res.json({ message: "Profile updated successfully", user: null });
             }
+            const tPg = Date.now();
             const rows = await sql`
                 UPDATE user_profiles SET ${sql(updates, ...keys)}
                 WHERE user_id = ${userId}
                 RETURNING *
             `;
+            console.log(`[auth/update-profile][${rid}] pg_update_done`, {
+                elapsed_ms: Date.now() - tPg,
+                total_ms: Date.now() - tStart,
+                rows_updated: rows.length,
+                user_id: userId,
+            });
             return res.json({ message: "Profile updated successfully", user: rows[0] });
         }
 
+        const tSb = Date.now();
         const { data, error } = await supabase
             .from('user_profiles')
             .update(updates)
             .eq('user_id', userId)
             .select();
+
+        console.log(`[auth/update-profile][${rid}] supabase_update_done`, {
+            elapsed_ms: Date.now() - tSb,
+            total_ms: Date.now() - tStart,
+            has_data: !!data,
+            rows_updated: data?.length || 0,
+            has_error: !!error,
+            error_message: error?.message,
+        });
 
         if (error) {
             return res.status(500).json({ error: error.message });
@@ -256,7 +310,12 @@ router.put('/update-profile', async (req, res) => {
 
         res.json({ message: "Profile updated successfully", user: data[0] });
     } catch (err) {
-        console.error("Update Profile Error:", err);
+        console.error(`[auth/update-profile][${rid}] unhandled_error`, {
+            message: err?.message,
+            name: err?.name,
+            stack: err?.stack,
+            total_ms: Date.now() - tStart,
+        });
         res.status(401).json({ error: "Invalid Token" });
     }
 });

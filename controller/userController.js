@@ -293,23 +293,57 @@ const getAllUsers = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+const ensureAmbassadorProfileRow = async (userId) => {
+  const rows = await sql`
+    SELECT 1 AS ok FROM ambassador_profiles WHERE user_id = ${userId} LIMIT 1
+  `;
+  if (rows.length) return;
+  try {
+    await sql`
+      INSERT INTO ambassador_profiles (user_id, promo_code, total_referrals)
+      VALUES (${userId}, NULL, 0)
+    `;
+  } catch (_e) {
+    const code = `ADM${crypto.randomBytes(6).toString("hex").toUpperCase()}`;
+    await sql`
+      INSERT INTO ambassador_profiles (user_id, promo_code, total_referrals)
+      VALUES (${userId}, ${code}, 0)
+    `;
+  }
+};
+
 const updateUserStatus = async (req, res) => {
   const { id } = req.params;
   const { role, is_blocked } = req.body;
 
   try {
     if (sql) {
-      if (role === 'ambassador') {
-        await sql`
-          INSERT INTO ambassador_profiles (user_id, promo_code, total_referrals)
-          VALUES (${id}, NULL, 0)
-          ON CONFLICT (user_id) DO NOTHING
-        `;
+      // Avoid ON CONFLICT (user_id) unless DB has UNIQUE(user_id)—many setups don't, which breaks the whole update.
+      if (role === "ambassador") {
+        await ensureAmbassadorProfileRow(id);
       }
       if (role !== undefined && is_blocked !== undefined) {
-        await sql`UPDATE user_profiles SET role = ${role}, is_blocked = ${is_blocked} WHERE user_id = ${id}`;
+        if (role === "ambassador") {
+          await sql`
+            UPDATE user_profiles
+            SET role = ${role}, is_blocked = ${is_blocked}, sdg_role = 'SDG Ambassador'
+            WHERE user_id = ${id}
+          `;
+        } else {
+          await sql`
+            UPDATE user_profiles SET role = ${role}, is_blocked = ${is_blocked} WHERE user_id = ${id}
+          `;
+        }
       } else if (role !== undefined) {
-        await sql`UPDATE user_profiles SET role = ${role} WHERE user_id = ${id}`;
+        if (role === "ambassador") {
+          await sql`
+            UPDATE user_profiles
+            SET role = ${role}, sdg_role = 'SDG Ambassador'
+            WHERE user_id = ${id}
+          `;
+        } else {
+          await sql`UPDATE user_profiles SET role = ${role} WHERE user_id = ${id}`;
+        }
       } else if (is_blocked !== undefined) {
         await sql`UPDATE user_profiles SET is_blocked = ${is_blocked} WHERE user_id = ${id}`;
       }
@@ -325,7 +359,6 @@ const updateUserStatus = async (req, res) => {
         .maybeSingle();
 
       if (!existingAmb) {
-        // নিশ্চিত করুন আপনার DB তে promo_code কলামটি NULL এলাউ করে
         const { error: ambError } = await supabase
           .from('ambassador_profiles')
           .insert([{
@@ -334,13 +367,24 @@ const updateUserStatus = async (req, res) => {
             total_referrals: 0
           }]);
 
-        if (ambError) throw ambError;
+        if (ambError) {
+          const fallback = `ADM${crypto.randomBytes(6).toString('hex').toUpperCase()}`;
+          const { error: retryErr } = await supabase
+            .from('ambassador_profiles')
+            .insert([{
+              user_id: id,
+              promo_code: fallback,
+              total_referrals: 0
+            }]);
+          if (retryErr) throw retryErr;
+        }
       }
     }
 
     // ২. শুধু যে ডাটাগুলো পাঠানো হয়েছে সেগুলোই আপডেট করা (Dynamic Update)
     const updateData = {};
     if (role !== undefined) updateData.role = role;
+    if (role === "ambassador") updateData.sdg_role = "SDG Ambassador";
     if (is_blocked !== undefined) updateData.is_blocked = is_blocked;
 
     const { data, error } = await supabase
