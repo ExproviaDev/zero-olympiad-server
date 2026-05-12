@@ -15,6 +15,13 @@ jobs:
     
     steps:
     - uses: actions/checkout@v3
+
+    # Repo secret ENV_VAR must hold the full .env body (LINE per KEY=value). `.env` is not committed (.gitignored).
+    - name: Create .env from GitHub secret
+      env:
+        ENV_FILE_CONTENT: ${{ secrets.ENV_VAR }}
+      run: |
+        printf '%s' "$ENV_FILE_CONTENT" > .env
     
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v2

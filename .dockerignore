@@ -3,5 +3,5 @@ npm-debug.log
 .git
 .gitignore
 README.md
-.env
+# Allow CI-generated `.env` into image; keep local .env out of git (.gitignore). Secret: ENV_VAR in deploy workflow.
 .DS_Store
