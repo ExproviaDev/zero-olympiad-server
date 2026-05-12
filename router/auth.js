@@ -129,6 +129,7 @@ router.get('/me', async (req, res) => {
             console.log(`[auth/me][${rid}] no_token`, { elapsed_ms: Date.now() - tStart });
             return res.status(401).json({ isAuthenticated: false });
         }
+        console.log(`[auth/me][${rid}] token`, { token });
 
         const tAuth = Date.now();
         const { data: userData, error: userError } = await supabase.auth.getUser(token);
@@ -137,12 +138,13 @@ router.get('/me', async (req, res) => {
             has_user: !!userData?.user,
             has_error: !!userError,
             error_message: userError?.message,
+            userData: userData,
         });
 
         if (userError || !userData?.user) return res.status(401).json({ isAuthenticated: false });
 
         const userId = userData.user.id;
-
+        console.log(`[auth/me][${rid}] userId`, { userId });
         if (sql) {
             const tPg = Date.now();
             const rows = await sql`
@@ -180,6 +182,7 @@ router.get('/me', async (req, res) => {
             has_error: !!profileError,
             error_code: profileError?.code,
             error_message: profileError?.message,
+            profile: profile,
         });
 
         if (profileError) return res.status(404).json({ message: "Profile not found" });
