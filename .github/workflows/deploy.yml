@@ -19,7 +19,7 @@ jobs:
     # Repo secret ENV_VAR must hold the full .env body (LINE per KEY=value). `.env` is not committed (.gitignored).
     - name: Create .env from GitHub secret
       env:
-        ENV_FILE_CONTENT: ${{ secrets.ENV_VAR }}
+        ENV_FILE_CONTENT: ${{ secrets.ENV_VARS }}
       run: |
         printf '%s' "$ENV_FILE_CONTENT" > .env
     
