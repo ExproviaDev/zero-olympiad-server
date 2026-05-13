@@ -191,6 +191,7 @@ router.get('/me', async (req, res) => {
             total_ms: Date.now() - tStart,
             user_id: userId,
             role: profile?.role,
+            assigned_sdg_number: profile?.assigned_sdg_number,
         });
         res.status(200).json({
             isAuthenticated: true,

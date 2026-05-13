@@ -75,7 +75,6 @@ const addMember = async (req, res) => {
       if (profileError) throw profileError;
     }
 
-    // 🔥 Extra Logic: User বা Ambassador হলে Round 1 টেবিলে ডাটা রাখা
     if (role === 'user' || role === 'ambassador' || role === 'Participant') {
       if (sql) {
         await sql`
@@ -91,7 +90,6 @@ const addMember = async (req, res) => {
       }
     }
 
-    // 🔥 Extra Logic: Ambassador হলে Ambassador টেবিলে ডাটা রাখা
     if (role === 'ambassador') {
       if (sql) {
         await sql`
