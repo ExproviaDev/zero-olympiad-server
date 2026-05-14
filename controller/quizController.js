@@ -616,22 +616,85 @@ const getUserAttempts = async (req, res) => {
         const { userId } = req.params;
 
         if (sql) {
-            const rows = await sql`
+            // Step 1: always fetch quiz_set_id — this must never fail
+            const baseRows = await sql`
                 SELECT quiz_set_id
                 FROM quiz_submissions
                 WHERE user_id = ${userId}
             `;
-            return res.status(200).json({ attempts: rows.map((a) => a.quiz_set_id) });
+
+            // Step 2: best-effort fetch of score + time — try common column names
+            let details = {};
+            try {
+                // Try 'score' first; some schemas use that name
+                const scoreRows = await sql`
+                    SELECT quiz_set_id, score, time_taken
+                    FROM quiz_submissions
+                    WHERE user_id = ${userId}
+                `;
+                scoreRows.forEach((r) => {
+                    details[r.quiz_set_id] = {
+                        score: r.score ?? null,
+                        time_taken: r.time_taken ?? null,
+                    };
+                });
+            } catch {
+                try {
+                    // Fallback: try 'quiz_score' column name
+                    const scoreRows2 = await sql`
+                        SELECT quiz_set_id, quiz_score AS score, time_taken
+                        FROM quiz_submissions
+                        WHERE user_id = ${userId}
+                    `;
+                    scoreRows2.forEach((r) => {
+                        details[r.quiz_set_id] = {
+                            score: r.score ?? null,
+                            time_taken: r.time_taken ?? null,
+                        };
+                    });
+                } catch {
+                    // Column names unknown — skip details, attempts still work
+                }
+            }
+
+            return res.status(200).json({
+                attempts: baseRows.map((a) => a.quiz_set_id),
+                details,
+            });
         }
 
-        const { data: attempts, error } = await supabase
+        // Supabase JS path
+        const { data: baseAttempts, error: baseError } = await supabase
             .from('quiz_submissions')
             .select('quiz_set_id')
             .eq('user_id', userId);
 
-        if (error) throw error;
+        if (baseError) throw baseError;
 
-        res.status(200).json({ attempts: attempts.map(a => a.quiz_set_id) });
+        // Best-effort score fetch via Supabase
+        let details = {};
+        try {
+            const { data: scoreData } = await supabase
+                .from('quiz_submissions')
+                .select('quiz_set_id, score, time_taken')
+                .eq('user_id', userId);
+
+            if (scoreData) {
+                scoreData.forEach((a) => {
+                    details[a.quiz_set_id] = {
+                        score: a.score ?? null,
+                        time_taken: a.time_taken ?? null,
+                    };
+                });
+            }
+        } catch {
+            // Skip details if column names differ
+        }
+
+        res.status(200).json({
+            attempts: baseAttempts.map(a => a.quiz_set_id),
+            details,
+        });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
