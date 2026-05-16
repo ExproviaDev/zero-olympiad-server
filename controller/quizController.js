@@ -387,6 +387,23 @@ const submitQuiz = async (req, res) => {
 
         if (rpcError) throw rpcError;
 
+        // ৩. Participation certificate guarantee — score নির্বিশেষে quiz submit করলেই
+        //    is_participated = true হওয়া উচিত। RPC সেটা না করলেও এখানে explicitly set করা হচ্ছে।
+        if (sql) {
+            await sql`
+                UPDATE user_profiles
+                SET is_participated = true
+                WHERE user_id = ${user_id}
+                  AND (is_participated IS NULL OR is_participated = false)
+            `;
+        } else {
+            await supabase
+                .from('user_profiles')
+                .update({ is_participated: true })
+                .eq('user_id', user_id)
+                .in('is_participated', [null, false]);
+        }
+
         res.status(201).json({
             success: true,
             message: "Quiz submitted successfully through RPC!",

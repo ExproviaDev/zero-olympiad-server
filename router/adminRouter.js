@@ -12,6 +12,7 @@ const {
     getMarketingUsers, getMarketingStats,
     searchParticipant,
     resetParticipant,
+    backfillParticipation,
 } = require("../controller/adminController");
 router.post("/add-member", verifyToken, verifyAdmin, addMember); //
 router.get("/all-users", verifyAdmin, getAllUsers);
@@ -28,6 +29,7 @@ router.put("/submit-score", verifyToken, verifyStaff, submitJuryScore);
 router.get("/dashboard-stats", verifyStaff, getDashboardStats);
 router.get("/search-participant", verifyAdmin, searchParticipant);
 router.post("/reset-participant", verifyAdmin, resetParticipant);
+router.post("/backfill-participation", verifyAdmin, backfillParticipation);
 
 
 module.exports = router;

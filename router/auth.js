@@ -162,12 +162,23 @@ router.get('/me', async (req, res) => {
                 console.warn(`[auth/me][${rid}] profile_not_found`, { user_id: userId });
                 return res.status(404).json({ message: 'Profile not found' });
             }
+            const profileRow = rows[0];
+            const profileLevel = profileRow?.grade_level || profileRow?.current_level || "";
+            const shouldBeAchiever = isAdmissionCandidateLevel(profileLevel);
+            if (shouldBeAchiever && profileRow?.sdg_role !== "SDG Achiever") {
+                await sql`
+                    UPDATE user_profiles
+                    SET sdg_role = 'SDG Achiever'
+                    WHERE user_id = ${userId}
+                `;
+                profileRow.sdg_role = "SDG Achiever";
+            }
             console.log(`[auth/me][${rid}] success`, {
                 total_ms: Date.now() - tStart,
                 user_id: userId,
-                role: rows[0].role,
+                role: profileRow.role,
             });
-            return res.status(200).json({ isAuthenticated: true, user: rows[0] });
+            return res.status(200).json({ isAuthenticated: true, user: profileRow });
         }
 
         const tSb = Date.now();
@@ -186,6 +197,18 @@ router.get('/me', async (req, res) => {
         });
 
         if (profileError) return res.status(404).json({ message: "Profile not found" });
+
+        const profileLevel = profile?.grade_level || profile?.current_level || "";
+        const shouldBeAchiever = isAdmissionCandidateLevel(profileLevel);
+        if (shouldBeAchiever && profile?.sdg_role !== "SDG Achiever") {
+            const { error: fixRoleError } = await supabase
+                .from('user_profiles')
+                .update({ sdg_role: "SDG Achiever" })
+                .eq('user_id', userId);
+            if (!fixRoleError) {
+                profile.sdg_role = "SDG Achiever";
+            }
+        }
 
         console.log(`[auth/me][${rid}] success`, {
             total_ms: Date.now() - tStart,
@@ -255,7 +278,7 @@ router.put('/update-profile', async (req, res) => {
 
             if (assignedSDGNumber >= 1 && assignedSDGNumber <= 4) {
                 sdgRole = "SDG Activist";
-            } else if ((assignedSDGNumber >= 5 && assignedSDGNumber <= 10) || isAdmissionCandidateLevel(updates.grade_level)) {
+            } else if (assignedSDGNumber >= 5 && assignedSDGNumber <= 10) {
                 sdgRole = "SDG Ambassador";
             } else if (assignedSDGNumber >= 11 && assignedSDGNumber <= 17) {
                 sdgRole = "SDG Achiever";

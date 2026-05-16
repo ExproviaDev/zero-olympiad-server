@@ -223,13 +223,13 @@ router.post('/register', async (req, res) => {
                 courseName: "A Participant Guide of the UN Climate Change Process",
                 courseLink: "https://unccelearn.org/course/view.php?id=174&page=overview"
             };
-        } else if ((assignedSDGNumber >= 5 && assignedSDGNumber <= 10) || isAdmissionCandidateLevel(gradeLevel)) {
+        } else if (assignedSDGNumber >= 5 && assignedSDGNumber <= 10) {
             // SDG 5-10: Ambassador
             sdgRole = "SDG Ambassador";
             examDateEn = "15 May";
             examDateBn = "১৫ মে";
             courseDetails = {
-                categoryName: "Class 9 to Varsity Admission Candidate (or equivalent)",
+                categoryName: "Class 9 to HSC/Alim Candidate (or equivalent)",
                 courseName: "Convention on Long-range Transboundary Air Pollution",
                 courseLink: "https://unccelearn.org/course/view.php?id=150&page=overview"
             };

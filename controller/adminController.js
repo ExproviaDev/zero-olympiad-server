@@ -623,6 +623,60 @@ const resetParticipant = async (req, res) => {
     }
 };
 
+// ─── backfillParticipation ────────────────────────────────────────────────────
+// One-time (and safe-to-repeat) admin utility.
+// Sets is_participated = true for every user who has a row in quiz_submissions
+// but whose profile still has is_participated = false / NULL.
+// Score doesn't matter — submitting the quiz earns the participation certificate.
+const backfillParticipation = async (req, res) => {
+    try {
+        if (sql) {
+            const result = await sql`
+                UPDATE user_profiles
+                SET is_participated = true
+                WHERE user_id IN (
+                    SELECT DISTINCT user_id FROM quiz_submissions
+                )
+                AND (is_participated IS NULL OR is_participated = false)
+                RETURNING user_id
+            `;
+            return res.status(200).json({
+                success: true,
+                updated: result.length,
+                message: `is_participated set to true for ${result.length} user(s).`,
+            });
+        }
+
+        // Supabase JS path — fetch affected IDs first, then update
+        const { data: submitters, error: fetchErr } = await supabase
+            .from('quiz_submissions')
+            .select('user_id');
+        if (fetchErr) throw fetchErr;
+
+        const ids = [...new Set(submitters.map(r => r.user_id))];
+        if (ids.length === 0) {
+            return res.status(200).json({ success: true, updated: 0, message: 'Nothing to update.' });
+        }
+
+        const { data: updated, error: updateErr } = await supabase
+            .from('user_profiles')
+            .update({ is_participated: true })
+            .in('user_id', ids)
+            .or('is_participated.is.null,is_participated.eq.false')
+            .select('user_id');
+        if (updateErr) throw updateErr;
+
+        return res.status(200).json({
+            success: true,
+            updated: updated?.length ?? 0,
+            message: `is_participated set to true for ${updated?.length ?? 0} user(s).`,
+        });
+    } catch (err) {
+        console.error('backfillParticipation error:', err.message);
+        res.status(500).json({ success: false, error: err.message });
+    }
+};
+
 module.exports = {
     getCompetitionSettings,
     updateCompetitionSettings,
@@ -633,4 +687,5 @@ module.exports = {
     getMarketingStats,
     searchParticipant,
     resetParticipant,
+    backfillParticipation,
 };
