@@ -85,7 +85,7 @@ const getRound2Submissions = async (req, res) => {
 
         if (sql) {
             const sdgFilter = sdg_number ? parseInt(sdg_number) : null;
-            /* Video submit sets status to 'submitted'; jury marks 'evaluated'. Pending tab = awaiting review */
+            /* Promoted users stay 'pending' until they submit a video; submit sets 'submitted'; jury sets 'evaluated'. */
             const tabEvaluated = status === 'evaluated';
 
             const rows = await sql`
@@ -112,7 +112,7 @@ const getRound2Submissions = async (req, res) => {
                   AND (
                     (${tabEvaluated} AND r2.status = 'evaluated')
                     OR
-                    (${!tabEvaluated} AND r2.status IN ('pending', 'submitted'))
+                    (${!tabEvaluated} AND r2.status = 'submitted')
                   )
                 ORDER BY r2.updated_at DESC
                 LIMIT ${limitInt} OFFSET ${offset}
@@ -144,7 +144,7 @@ const getRound2Submissions = async (req, res) => {
         if (status === 'evaluated') {
             query = query.eq('status', 'evaluated');
         } else {
-            query = query.in('status', ['pending', 'submitted']);
+            query = query.eq('status', 'submitted');
         }
 
         query = query
