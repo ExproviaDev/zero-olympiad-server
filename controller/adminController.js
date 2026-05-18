@@ -85,7 +85,8 @@ const getRound2Submissions = async (req, res) => {
 
         if (sql) {
             const sdgFilter = sdg_number ? parseInt(sdg_number) : null;
-            const isPending = status !== 'evaluated';
+            /* Video submit sets status to 'submitted'; jury marks 'evaluated'. Pending tab = awaiting review */
+            const tabEvaluated = status === 'evaluated';
 
             const rows = await sql`
                 SELECT
@@ -105,11 +106,13 @@ const getRound2Submissions = async (req, res) => {
                     COUNT(*) OVER() AS total_count
                 FROM round_2_selection r2
                 INNER JOIN user_profiles up ON up.user_id = r2.user_id
-                WHERE (${sdgFilter}::int IS NULL OR up.assigned_sdg_number = ${sdgFilter})
+                WHERE r2.video_link IS NOT NULL
+                  AND LENGTH(BTRIM(r2.video_link::text)) > 0
+                  AND (${sdgFilter}::int IS NULL OR up.assigned_sdg_number = ${sdgFilter})
                   AND (
-                    (${isPending}::boolean = TRUE AND r2.status = 'pending')
+                    (${tabEvaluated} AND r2.status = 'evaluated')
                     OR
-                    (${isPending}::boolean = FALSE AND r2.status <> 'pending')
+                    (${!tabEvaluated} AND r2.status IN ('pending', 'submitted'))
                   )
                 ORDER BY r2.updated_at DESC
                 LIMIT ${limitInt} OFFSET ${offset}
@@ -139,12 +142,16 @@ const getRound2Submissions = async (req, res) => {
             query = query.eq('user_profiles.assigned_sdg_number', sdg_number);
         }
         if (status === 'evaluated') {
-            query = query.neq('status', 'pending');
+            query = query.eq('status', 'evaluated');
         } else {
-            query = query.eq('status', 'pending');
+            query = query.in('status', ['pending', 'submitted']);
         }
 
-        query = query.order('updated_at', { ascending: false }).range(from, to);
+        query = query
+            .not('video_link', 'is', null)
+            .neq('video_link', '')
+            .order('updated_at', { ascending: false })
+            .range(from, to);
 
         const { data, error, count } = await query;
         if (error) throw error;
