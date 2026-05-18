@@ -1,6 +1,309 @@
 const supabase = require('../config/db');
 const sql = require('../config/pg');
 
+/** Last ~45 days cumulative counts for dashboard line chart */
+async function fetchDashboardMetricsTrendSql(pgSql) {
+    const rows = await pgSql`
+        WITH series AS (
+            SELECT (gs)::date AS day
+            FROM generate_series(
+                (CURRENT_DATE - INTERVAL '44 days')::date,
+                CURRENT_DATE::date,
+                INTERVAL '1 day'
+            ) AS gs
+        ),
+        enrol_d AS (
+            SELECT (created_at::date) AS day, COUNT(*)::int AS n
+            FROM user_profiles
+            WHERE created_at IS NOT NULL
+            GROUP BY 1
+        ),
+        enrol_fill AS (
+            SELECT s.day, COALESCE(e.n, 0)::int AS n
+            FROM series s
+            LEFT JOIN enrol_d e ON e.day = s.day
+        ),
+        enrol_cum AS (
+            SELECT day, SUM(n) OVER (ORDER BY day)::int AS enrolment
+            FROM enrol_fill
+        ),
+        r2_d AS (
+            SELECT (COALESCE(created_at, updated_at))::date AS day, COUNT(*)::int AS n
+            FROM round_2_selection
+            WHERE COALESCE(created_at, updated_at) IS NOT NULL
+            GROUP BY (COALESCE(created_at, updated_at))::date
+        ),
+        r2_fill AS (
+            SELECT s.day, COALESCE(r.n, 0)::int AS n
+            FROM series s
+            LEFT JOIN r2_d r ON r.day = s.day
+        ),
+        r2_cum AS (
+            SELECT day, SUM(n) OVER (ORDER BY day)::int AS second_round
+            FROM r2_fill
+        ),
+        fin_d AS (
+            SELECT (updated_at::date) AS day, COUNT(*)::int AS n
+            FROM round_2_selection
+            WHERE status = 'selected' AND updated_at IS NOT NULL
+            GROUP BY 1
+        ),
+        fin_fill AS (
+            SELECT s.day, COALESCE(f.n, 0)::int AS n
+            FROM series s
+            LEFT JOIN fin_d f ON f.day = s.day
+        ),
+        fin_cum AS (
+            SELECT day, SUM(n) OVER (ORDER BY day)::int AS finalists
+            FROM fin_fill
+        )
+        SELECT
+            TO_CHAR(e.day, 'Mon DD') AS label,
+            e.day AS sort_day,
+            e.enrolment,
+            r.second_round,
+            f.finalists
+        FROM enrol_cum e
+        INNER JOIN r2_cum r ON r.day = e.day
+        INNER JOIN fin_cum f ON f.day = e.day
+        ORDER BY e.day ASC
+    `;
+    return rows.map((row) => ({
+        label: row.label,
+        enrolment: Number(row.enrolment) || 0,
+        secondRound: Number(row.second_round) || 0,
+        finalists: Number(row.finalists) || 0,
+    }));
+}
+
+async function fetchDashboardMetricsTrendSupabase(sb) {
+    const dayKey = (t) => {
+        if (!t) return null;
+        const x = new Date(t);
+        if (Number.isNaN(x.getTime())) return null;
+        return x.toISOString().slice(0, 10);
+    };
+
+    const [{ data: pu, error: e1 }, { data: r2, error: e2 }] = await Promise.all([
+        sb.from('user_profiles').select('created_at'),
+        sb.from('round_2_selection').select('created_at, updated_at, status'),
+    ]);
+    if (e1 || e2) throw e1 || e2;
+
+    const enrolDates = (pu || [])
+        .map((r) => dayKey(r.created_at))
+        .filter(Boolean)
+        .sort();
+
+    const r2Rows = r2 || [];
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+
+    const trend = [];
+    for (let offset = 44; offset >= 0; offset -= 1) {
+        const d = new Date(today);
+        d.setUTCDate(d.getUTCDate() - offset);
+        const dStr = d.toISOString().slice(0, 10);
+        const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+        let en = 0;
+        while (en < enrolDates.length && enrolDates[en] <= dStr) en += 1;
+
+        let sr = 0;
+        for (const row of r2Rows) {
+            const dk = dayKey(row.created_at) || dayKey(row.updated_at);
+            if (dk && dk <= dStr) sr += 1;
+        }
+
+        let fn = 0;
+        for (const row of r2Rows) {
+            if (row.status !== 'selected') continue;
+            const dk = dayKey(row.updated_at);
+            if (dk && dk <= dStr) fn += 1;
+        }
+
+        trend.push({ label, enrolment: en, secondRound: sr, finalists: fn });
+    }
+    return trend;
+}
+
+const AMBASSADOR_PIE_TOP_N = 7;
+
+function composeAmbassadorRegistrationPieFromRows(organicCount, referralRows) {
+    const organic = Number(organicCount) || 0;
+    const rows = [...(referralRows || [])].sort(
+        (a, b) => Number(b?.cnt ?? b?.count ?? 0) - Number(a?.cnt ?? a?.count ?? 0),
+    );
+    const out = [];
+    if (organic > 0) {
+        out.push({
+            key: 'organic',
+            name: 'Organic — no ambassador code',
+            value: organic,
+            code: null,
+        });
+    }
+    let otherSum = 0;
+    rows.forEach((r, idx) => {
+        const code = String(r?.code ?? r?.promo_code ?? '').trim().toUpperCase();
+        const v = Number(r?.cnt ?? r?.count ?? 0) || 0;
+        if (!code || v <= 0) return;
+        const ambName = String(r?.ambassador_name ?? r?.display_name ?? '').trim();
+        if (idx < AMBASSADOR_PIE_TOP_N) {
+            const nm = ambName ? `${ambName.slice(0, 24)} (${code})` : code;
+            out.push({ key: code, name: nm, value: v, code });
+        } else {
+            otherSum += v;
+        }
+    });
+    if (otherSum > 0) {
+        const nRest = rows.length > AMBASSADOR_PIE_TOP_N ? rows.length - AMBASSADOR_PIE_TOP_N : 1;
+        out.push({
+            key: '__others',
+            name: `Other ambassador codes (${nRest}+)`,
+            value: otherSum,
+            code: 'others',
+        });
+    }
+    return out.filter((x) => x.value > 0);
+}
+
+async function fetchAmbassadorRegistrationPieSql(pgSql) {
+    // Aggregate signups purely from user_profiles — never block the pie on ambassador JOIN issues.
+    const organicRows = await pgSql`
+        SELECT COUNT(*)::int AS c
+        FROM user_profiles
+        WHERE promo_code IS NULL OR LENGTH(TRIM(COALESCE(promo_code, ''))) = 0
+    `;
+    const organicCount = organicRows?.[0]?.c ?? 0;
+
+    const countsOnly = await pgSql`
+        SELECT
+            UPPER(TRIM(promo_code)) AS code,
+            COUNT(*)::int AS cnt
+        FROM user_profiles
+        WHERE promo_code IS NOT NULL AND LENGTH(TRIM(promo_code)) > 0
+        GROUP BY UPPER(TRIM(promo_code))
+        ORDER BY cnt DESC
+    `;
+
+    const nameByCode = {};
+    try {
+        const nameRows = await pgSql`
+            SELECT UPPER(TRIM(ap.promo_code)) AS code, MAX(TRIM(up.name)) AS ambassador_name
+            FROM ambassador_profiles ap
+            INNER JOIN user_profiles up ON up.user_id = ap.user_id
+            WHERE ap.promo_code IS NOT NULL AND LENGTH(TRIM(ap.promo_code)) > 0
+            GROUP BY UPPER(TRIM(ap.promo_code))
+        `;
+        (nameRows || []).forEach((row) => {
+            const code = row?.code ? String(row.code).trim().toUpperCase() : '';
+            if (!code) return;
+            nameByCode[code] = String(row?.ambassador_name ?? '').trim();
+        });
+    } catch (nameErr) {
+        console.error('[fetchAmbassadorRegistrationPieSql] name map skipped:', nameErr.message);
+    }
+
+    const refRows = (countsOnly || []).map((r) => ({
+        code: r.code,
+        cnt: r.cnt,
+        ambassador_name: nameByCode[String(r.code).trim().toUpperCase()] || '',
+    }));
+
+    return composeAmbassadorRegistrationPieFromRows(Number(organicCount) || 0, refRows);
+}
+
+/** Paginate past PostgREST 1000-row default so ambassador pie matches full enrolment. */
+async function fetchAllPromoRowsSupabase(sb) {
+    const pageSize = 1000;
+    let from = 0;
+    const out = [];
+    for (;;) {
+        const { data, error } = await sb
+            .from('user_profiles')
+            .select('promo_code')
+            .order('user_id', { ascending: true })
+            .range(from, from + pageSize - 1);
+        if (error) throw error;
+        const batch = Array.isArray(data) ? data : [];
+        out.push(...batch);
+        if (batch.length < pageSize) break;
+        from += pageSize;
+    }
+    return out;
+}
+
+async function fetchAmbassadorProfilesPageSupabase(sb) {
+    const pageSize = 1000;
+    let from = 0;
+    const out = [];
+    for (;;) {
+        const { data, error } = await sb
+            .from('ambassador_profiles')
+            .select('promo_code, user_id')
+            .order('user_id', { ascending: true })
+            .range(from, from + pageSize - 1);
+        if (error) throw error;
+        const batch = Array.isArray(data) ? data : [];
+        out.push(...batch);
+        if (batch.length < pageSize) break;
+        from += pageSize;
+    }
+    return out;
+}
+
+async function fetchAmbassadorRegistrationPieSupabase(sb) {
+    const profiles = await fetchAllPromoRowsSupabase(sb);
+
+    const nameByCode = {};
+
+    try {
+        const ambassadorRows = await fetchAmbassadorProfilesPageSupabase(sb);
+        const userIds = [...new Set(ambassadorRows.map((r) => r?.user_id).filter(Boolean))];
+        let profilesById = {};
+        if (userIds.length > 0) {
+            const pageSize = 1000;
+            for (let i = 0; i < userIds.length; i += pageSize) {
+                const slice = userIds.slice(i, i + pageSize);
+                const nmRes = await sb.from('user_profiles').select('user_id, name').in('user_id', slice);
+                if (nmRes.error) throw nmRes.error;
+                (nmRes.data || []).forEach((r) => {
+                    profilesById[r.user_id] = String(r?.name || '').trim();
+                });
+            }
+        }
+        ambassadorRows.forEach((row) => {
+            const c = row?.promo_code ? String(row.promo_code).trim().toUpperCase() : '';
+            if (!c) return;
+            nameByCode[c] = profilesById[row?.user_id] || '';
+        });
+    } catch (mapErr) {
+        console.error('[fetchAmbassadorRegistrationPieSupabase] ambassador name map skipped:', mapErr.message);
+    }
+
+    let organic = 0;
+    const byCode = {};
+    (profiles || []).forEach((p) => {
+        const raw = p?.promo_code;
+        const c = raw == null ? '' : String(raw).trim();
+        if (!c) organic += 1;
+        else {
+            const ku = c.toUpperCase();
+            byCode[ku] = (byCode[ku] || 0) + 1;
+        }
+    });
+
+    const referralRows = Object.entries(byCode).map(([code, cnt]) => ({
+        code,
+        cnt,
+        ambassador_name: nameByCode[code] || '',
+    }));
+    referralRows.sort((a, b) => b.cnt - a.cnt);
+
+    return composeAmbassadorRegistrationPieFromRows(organic, referralRows);
+}
+
 const getCompetitionSettings = async (req, res) => {
     try {
         if (sql) {
@@ -260,7 +563,21 @@ const getDashboardStats = async (req, res) => {
                 registration_count: count,
             }));
 
+            let metrics_trend = [];
+            try {
+                metrics_trend = await fetchDashboardMetricsTrendSql(sql);
+            } catch (trendErr) {
+                console.error('[admin/dashboard-stats] metrics_trend (pg)', trendErr.message);
+            }
+
             console.log("[admin/dashboard-stats]", { total_ms: Date.now() - t0, pg: true });
+
+            let ambassador_registration_pie = [];
+            try {
+                ambassador_registration_pie = await fetchAmbassadorRegistrationPieSql(sql);
+            } catch (ambErr) {
+                console.error('[admin/dashboard-stats] ambassador_registration_pie (pg)', ambErr.message);
+            }
 
             return res.status(200).json({
                 total_enrolment: enrolmentRows[0].c,
@@ -268,6 +585,8 @@ const getDashboardStats = async (req, res) => {
                 second_round_students: secondRoundRows[0].c,
                 total_finalists: finalistRows[0].c,
                 sdg_registrations: sdgStats,
+                metrics_trend,
+                ambassador_registration_pie,
             });
         }
 
@@ -327,12 +646,28 @@ const getDashboardStats = async (req, res) => {
 
         console.log("[admin/dashboard-stats]", { total_ms: Date.now() - t0, sdg_fallback: usedSdgFallback });
 
+        let metrics_trend = [];
+        try {
+            metrics_trend = await fetchDashboardMetricsTrendSupabase(supabase);
+        } catch (trendErr) {
+            console.error('[admin/dashboard-stats] metrics_trend (supabase)', trendErr.message);
+        }
+
+        let ambassador_registration_pie = [];
+        try {
+            ambassador_registration_pie = await fetchAmbassadorRegistrationPieSupabase(supabase);
+        } catch (ambErr) {
+            console.error('[admin/dashboard-stats] ambassador_registration_pie (supabase)', ambErr.message);
+        }
+
         res.status(200).json({
             total_enrolment: enrolmentResult.count || 0,
             total_participant: participantResult.count || 0,
             second_round_students: secondRoundResult.count || 0,
             total_finalists: finalistResult.count || 0,
             sdg_registrations: sdgStats || [],
+            metrics_trend,
+            ambassador_registration_pie,
         });
     } catch (err) {
         console.error("Dashboard Stats Error:", err.message);
