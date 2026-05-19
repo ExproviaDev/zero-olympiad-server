@@ -103,6 +103,8 @@ app.use("/api/user/resend-otp", otpLimiter);
 app.use('/api/user', registrationRouter); 
 app.use('/api/auth', authRouter);
 app.use('/api/admin', quizRouter);
+/** Same quiz routes without /admin prefix — mirrors public API fallbacks on the frontend */
+app.use('/api/quiz', quizRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/mark', markRouter);
 app.use('/api/video', videoRouter);
