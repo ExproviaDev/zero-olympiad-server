@@ -1,43 +1,53 @@
-name: Deploy to ECR
+name: CI/CD - Backend (Vercel -> VPS)
 
 on:
   push:
-    branches: [ main ]
+    branches: [main] # deploy on every push to main
 
-env:
-  AWS_REGION: ap-southeast-1
-  ECR_REPOSITORY: zero-olympiad-server
-  AWS_ACCOUNT_ID: 438777519548
+concurrency:
+  group: backend-deploy
+  cancel-in-progress: true
 
 jobs:
-  deploy:
+  # ---------- STAGE 1: Vercel ----------
+  vercel:
+    name: Deploy to Vercel
     runs-on: ubuntu-latest
-    
     steps:
-    - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    # Repo secret ENV_VAR must hold the full .env body (LINE per KEY=value). `.env` is not committed (.gitignored).
-    - name: Create .env from GitHub secret
-      env:
-        ENV_FILE_CONTENT: ${{ secrets.ENV_VARS }}
-      run: |
-        printf '%s' "$ENV_FILE_CONTENT" > .env
-    
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v2
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ env.AWS_REGION }}
-    
-    - name: Login to Amazon ECR
-      id: login-ecr
-      uses: aws-actions/amazon-ecr-login@v1
-    
-    - name: Build, tag, and push image to Amazon ECR
-      env:
-        ECR_REGISTRY: ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
-        IMAGE_TAG: latest
-      run: |
-        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Deploy to Vercel (production)
+        run: |
+          npx --yes vercel@latest link --yes --project=zero-backend --token="$VERCEL_TOKEN"
+          npx --yes vercel@latest --prod --yes --token="$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+  # ---------- STAGE 2: VPS (only after Vercel succeeds) ----------
+  vps:
+    name: Deploy to VPS
+    needs: vercel
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH (git pull + PM2)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            export PATH=$PATH:/usr/bin:/usr/local/bin:/root/.nvm/versions/node/*/bin
+            cd /var/www/zero-backend
+            git pull origin main
+            # .env stays on the server (it is .gitignored, so git pull never touches it)
+            npm ci --omit=dev || npm install --omit=dev
+            export PORT=5000
+            pm2 restart zero-backend --update-env || pm2 start server.js --name zero-backend
+            pm2 save
