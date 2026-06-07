@@ -91,6 +91,36 @@ location /api/    { proxy_pass http://127.0.0.1:5000; }
 
 ---
 
+## Troubleshooting
+
+### `ssh: this private key is passphrase protected`
+The key in `VPS_SSH_KEY` has a passphrase — `drone-ssh` cannot unlock it.
+Regenerate **without** a passphrase (note `-N ""`) and replace the secret:
+
+```bash
+ssh-keygen -t ed25519 -C "github-actions" -f deploy_key -N ""
+```
+
+- `VPS_SSH_KEY` = full contents of `deploy_key` (private, incl. BEGIN/END).
+- Append `deploy_key.pub` to the VPS `~/.ssh/authorized_keys`.
+
+### `dial tcp ***:22: i/o timeout`
+The runner can't reach the VPS on port 22. Check, on the VPS:
+
+```bash
+systemctl status ssh          # is sshd running?
+ufw status                    # if active, allow SSH:
+ufw allow 22/tcp
+```
+
+Also in the **Hostinger panel → VPS → Firewall**, make sure inbound TCP **22**
+is allowed (GitHub runner IPs are dynamic, so allow from any source `0.0.0.0/0`).
+Confirm `VPS_HOST` is exactly `93.127.185.95`. Test locally:
+
+```bash
+ssh -i deploy_key root@93.127.185.95
+```
+
 ## Notes
 
 - Vercel env vars (API URLs, keys) are configured in the **Vercel dashboard**, not here.
